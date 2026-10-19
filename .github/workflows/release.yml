@@ -16,8 +16,38 @@ permissions:
   contents: write
 
 jobs:
+  check-version:
+    name: Check Version Shift
+    runs-on: ubuntu-latest
+    outputs:
+      version_shifted: ${{ steps.check.outputs.version_shifted }}
+      version: ${{ steps.check.outputs.version }}
+      tag_name: ${{ steps.check.outputs.tag_name }}
+      release_title: ${{ steps.check.outputs.release_title }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Check if version shifted
+        id: check
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: python scripts/check_version.py
+
   build-and-release:
     name: Build & Release Installer (Draft)
+    needs: check-version
+    if: needs.check-version.outputs.version_shifted == 'true'
     runs-on: windows-latest
 
     steps:
@@ -58,32 +88,11 @@ jobs:
           $sizeMb = [math]::Round($item.Length / 1MB, 2)
           Write-Host "Installer built successfully: $($item.FullName) ($sizeMb MB)"
 
-      - name: Determine Tag & Release Metadata
-        id: meta
-        shell: pwsh
-        run: |
-          $version = "1.0.0"
-          if (Test-Path "version.txt") {
-            $version = (Get-Content -Path "version.txt" -Raw).Trim()
-          }
-
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            $tagName = $env:GITHUB_REF_NAME
-          } else {
-            $tagName = "v$version"
-          }
-          $releaseTitle = "Affinity Arabic $tagName"
-
-          Write-Host "Draft Release Tag: $tagName"
-          Write-Host "Draft Release Title: $releaseTitle"
-          "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
       - name: Create or Update Draft Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: ${{ env.RELEASE_TITLE }}
+          tag_name: ${{ needs.check-version.outputs.tag_name }}
+          name: ${{ needs.check-version.outputs.release_title }}
           draft: true
           prerelease: false
           files: |

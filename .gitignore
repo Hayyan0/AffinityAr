@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+backup/
+docs/
+tests/
+*.old
+
+# Runtime state (created on install)
+hook.log
+
+# Cargo
+installer/src-tauri/target/
+installer/src-tauri/gen/
+
+# Node
+node_modules/
+
+# OS / misc
+Thumbs.db
+.DS_Store
+*.local
+__pycache__/
+.pytest_cache/
