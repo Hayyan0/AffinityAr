@@ -1,0 +1,112 @@
+name: Build & Release Installer
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Installer (Draft)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC Developer Environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: installer/src-tauri
+
+      - name: Compile Hook & Proxy Binaries
+        shell: cmd
+        run: scripts\build.bat
+
+      - name: Build & Pack Installer
+        shell: cmd
+        run: scripts\build_installer.bat
+
+      - name: Verify Installer Artifact
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "bin/AffinityArabicSetup.exe")) {
+            Write-Error "AffinityArabicSetup.exe not found in bin directory!"
+            exit 1
+          }
+          $item = Get-Item "bin/AffinityArabicSetup.exe"
+          $sizeMb = [math]::Round($item.Length / 1MB, 2)
+          Write-Host "Installer built successfully: $($item.FullName) ($sizeMb MB)"
+
+      - name: Determine Tag & Release Metadata
+        id: meta
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "1.0.0"
+          if (Test-Path "version.txt") {
+            $version = (Get-Content -Path "version.txt" -Raw).Trim()
+          }
+
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $tagName = $env:GITHUB_REF_NAME
+            $releaseTitle = "Affinity Arabic $tagName"
+          } else {
+            $baseTag = "v$version"
+            $isPublished = $false
+            try {
+              $relJson = gh release view $baseTag --json isDraft 2>$null
+              if ($relJson) {
+                $rel = $relJson | ConvertFrom-Json
+                if ($rel -and (-not $rel.isDraft)) {
+                  $isPublished = $true
+                }
+              }
+            } catch {}
+
+            if ($isPublished) {
+              $tagName = "$baseTag-build.$env:GITHUB_RUN_NUMBER"
+            } else {
+              $tagName = $baseTag
+            }
+            $releaseTitle = "Affinity Arabic $tagName"
+          }
+
+          Write-Host "Draft Release Tag: $tagName"
+          Write-Host "Draft Release Title: $releaseTitle"
+          "TAG_NAME=$tagName" >> $env:GITHUB_ENV
+          "RELEASE_TITLE=$releaseTitle" >> $env:GITHUB_ENV
+
+      - name: Create or Update Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.RELEASE_TITLE }}
+          draft: true
+          prerelease: false
+          files: |
+            bin/AffinityArabicSetup.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

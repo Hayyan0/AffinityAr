@@ -1,0 +1,3 @@
+LIBRARY libstacktrace
+EXPORTS
+    ?GetAsString@StackTrace@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@_K0@Z=libstacktrace_orig.?GetAsString@StackTrace@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@_K0@Z

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>مُثبت تعريب أفينتي</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="splash-screen" class="splash-screen">
+    <div class="splash-content">
+      <div class="splash-logo-wrapper">
+        <img src="assets/Frame.png" alt="Affinity Arabic Logo" class="splash-logo" />
+      </div>
+      <h1 class="splash-title">أفينتي بالعربية</h1>
+      <div class="splash-loader">
+        <div class="splash-bar"></div>
+      </div>
+      <span class="splash-status">جاري تهيئة بيئة العمل وفحص ملفات Affinity...</span>
+    </div>
+  </div>
+
+  <header class="custom-actionbar" data-tauri-drag-region>
+    <div class="actionbar-title" data-tauri-drag-region>
+      <span>مُثبت تعريب أفينتي</span>
+    </div>
+    <div class="actionbar-controls">
+      <button id="btn-window-minimize" class="control-btn" title="تصغير">
+        <svg width="11" height="2" viewBox="0 0 11 2" fill="none">
+          <rect width="11" height="2" rx="1" fill="currentColor"/>
+        </svg>
+      </button>
+      <button id="btn-window-close" class="control-btn close" title="إغلاق">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <main class="content-stage">
+      <div class="page-container" id="page-container">
+
+        <section id="step-01" class="step-view active">
+          <div class="view-header">
+            <h1 class="view-title">أبدع بلغتك.</h1>
+            <p class="view-subtitle">تثبيت محرك تشكيل النصوص والخطوط العربية لأفينتي.</p>
+          </div>
+
+          <div class="view-body">
+            <div class="card app-summary-card">
+              <div class="app-summary-right">
+                <div class="app-avatar-box">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                    <polyline points="2 17 12 22 22 17"/>
+                    <polyline points="2 12 12 17 22 12"/>
+                  </svg>
+                </div>
+                <div class="app-summary-details">
+                  <h3 class="app-detected-name" id="s1-detected-name">Affinity</h3>
+                  <span class="app-detected-version" id="s1-detected-sub">جاري فحص الإصدار...</span>
+                </div>
+              </div>
+              <div class="app-summary-left">
+                <span class="badge-code" id="s1-detected-badge">AFFINITY</span>
+              </div>
+            </div>
+
+            <div class="features-list">
+              <div class="feature-item">
+                <div class="feature-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
+                <span class="feature-text">التعرف التلقائي على مسار تثبيت Affinity وإصداره بدقة</span>
+              </div>
+
+              <div class="feature-item">
+                <div class="feature-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" y1="21" x2="4" y2="14"/>
+                    <line x1="4" y1="10" x2="4" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12" y2="3"/>
+                    <line x1="20" y1="21" x2="20" y2="16"/>
+                    <line x1="20" y1="12" x2="20" y2="3"/>
+                    <line x1="1" y1="14" x2="7" y2="14"/>
+                    <line x1="9" y1="8" x2="15" y2="8"/>
+                    <line x1="17" y1="16" x2="23" y2="16"/>
+                  </svg>
+                </div>
+                <span class="feature-text">إمكانية الاختيار بين الدمج المباشر أو المشغّل المستقل</span>
+              </div>
+
+              <div class="feature-item">
+                <div class="feature-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <path d="M9 12l2 2 4-4"/>
+                  </svg>
+                </div>
+                <span class="feature-text">حفظ نسخة احتياطية لملفات البرنامج الأصلية تلقائيًا</span>
+              </div>
+            </div>
+
+            <div class="alert-banner green-banner">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span>احفظ تصاميمك قبل متابعة التثبيت.</span>
+            </div>
+          </div>
+
+          <footer class="view-footer">
+            <button class="btn btn-primary" id="btn-to-step2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>بدء الإعداد</span>
+            </button>
+          </footer>
+        </section>
+
+        <section id="step-02" class="step-view">
+          <div class="view-header">
+            <h1 class="view-title">تحديد مجلد تثبيت Affinity</h1>
+            <p class="view-subtitle">تم التعرف على مسار البرنامج تلقائيًا. أكّد المسار أو اختر مسارًا آخر.</p>
+          </div>
+
+          <div class="view-body">
+            <div class="card app-summary-card">
+              <div class="app-summary-right">
+                <div class="app-avatar-box">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                    <polyline points="2 17 12 22 22 17"/>
+                    <polyline points="2 12 12 17 22 12"/>
+                  </svg>
+                </div>
+                <div class="app-summary-details">
+                  <span class="sub-label">التطبيق المكتشف</span>
+                  <h3 class="app-detected-name" id="s2-detected-name">Affinity</h3>
+                  <span class="app-detected-version" id="s2-detected-sub">الإصدار...</span>
+                </div>
+              </div>
+              <div class="app-summary-left">
+                <span class="badge-success">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  <span>عُثر عليه</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="path-section">
+              <div class="section-label-row">
+                <span class="label-ar">مسار البرنامج</span>
+                <span class="label-en">INSTALLATION DIRECTORY</span>
+              </div>
+
+              <div class="path-input-row">
+                <button class="btn btn-secondary" id="btn-browse-folder">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span>تغيير المجلد</span>
+                </button>
+                <div class="path-display-box">
+                  <input type="text" id="target-path-field" class="path-input" value="C:\Program Files\Affinity\Affinity" spellcheck="false" />
+                </div>
+              </div>
+
+              <div class="path-status-row">
+                <div class="status-valid">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                  <span id="txt-path-validation">المجلد صالح ويحتوي على ملف Affinity.exe</span>
+                </div>
+                <span class="status-storage" id="txt-storage-info">جاري حساب المساحة...</span>
+              </div>
+            </div>
+
+            <div class="card existing-install-card" id="existing-install-card" style="display: none;">
+              <div class="existing-install-main">
+                <div class="existing-icon-box">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F5C86B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                </div>
+                <div class="existing-install-text">
+                  <h3 class="existing-install-title">هذا المسار يحتوي على تثبيت سابق</h3>
+                  <span class="existing-install-details" id="existing-install-details">جاري فحص النسخة...</span>
+                </div>
+                <div class="existing-install-actions">
+                  <button class="btn btn-remove" id="btn-uninstall-existing">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>إزالة التعريب</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="view-footer">
+            <button class="btn btn-primary" id="btn-to-step3">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>تأكيد المجلد</span>
+            </button>
+            <button class="btn btn-ghost" id="btn-back-step1">
+              <span>رجوع</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </footer>
+        </section>
+
+        <section id="step-03" class="step-view">
+          <div class="view-header">
+            <h1 class="view-title">اختر طريقة التثبيت</h1>
+            <p class="view-subtitle">اختر بين الدمج المباشر داخل التطبيق أو استخدام مشغّل مستقل.</p>
+          </div>
+
+          <div class="view-body">
+            <div class="mode-cards-grid">
+              <div class="mode-card" id="mode-card-launcher" data-mode="launcher">
+                <div class="mode-card-top">
+                  <div class="mode-radio-circle"></div>
+                  <div class="mode-icon-box">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                      <line x1="8" y1="21" x2="16" y2="21"/>
+                      <line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                  </div>
+                </div>
+                <h3 class="mode-card-title">مشغّل مستقل</h3>
+                <span class="mode-card-subtitle">مُشغل منفصل</span>
+                <p class="mode-card-desc">تشغيل البرنامج عبر اختصار مستقل AffinityArabic.exe.</p>
+
+                <div class="mode-card-checklist">
+                  <div class="mode-check-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>إنشاء اختصار مباشر على سطح المكتب</span>
+                  </div>
+                  <div class="mode-check-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>عدم تعديل أي ملف في التثبيت الأصلي</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mode-card selected" id="mode-card-embedded" data-mode="embedded">
+                <div class="mode-card-top">
+                  <div class="mode-radio-circle active"></div>
+                  <div class="mode-icon-box active">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                      <polyline points="2 17 12 22 22 17"/>
+                      <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                  </div>
+                </div>
+                <h3 class="mode-card-title">دمج تلقائي مع التطبيق</h3>
+                <span class="mode-card-subtitle tag-selected">موصى به</span>
+                <p class="mode-card-desc">تفعيل التعريب مباشرة عند فتح Affinity من أي اختصار أو مستند وبشكل سلس وتلقائي.</p>
+
+                <div class="mode-card-checklist">
+                  <div class="mode-check-item highlight">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>يعمل تلقائيًا مع كافة اختصارات وملفات البرنامج</span>
+                  </div>
+                  <div class="mode-check-item highlight">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>حفظ نسخة احتياطية للملفات الأصلية تلقائيًا</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="info-note">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              <span>يتم حفظ نسخة احتياطية لملفات البرنامج الأصلية تلقائيًا قبل التثبيت.</span>
+            </div>
+          </div>
+
+          <footer class="view-footer">
+            <button class="btn btn-primary" id="btn-start-install">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>تثبيت التعريب</span>
+            </button>
+            <button class="btn btn-ghost" id="btn-back-step2">
+              <span>رجوع</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </footer>
+        </section>
+
+        <section id="step-04" class="step-view">
+          <div class="view-header">
+            <h1 class="view-title" id="s4-title">جاري التثبيت</h1>
+            <p class="view-subtitle" id="step-04-sub">يتم الآن نسخ ملفات المحرك العربي وإعداد بيئة العمل.</p>
+          </div>
+
+          <div class="view-body">
+            <div class="progress-block" id="progress-container">
+              <div class="progress-headline">
+                <div class="progress-numbers">
+                  <span class="progress-big-number" id="progress-percent">0</span>
+                  <span class="progress-percent-symbol">%</span>
+                </div>
+                <div class="progress-labels">
+                  <span class="progress-current-task" id="progress-task-name">بدء التثبيت...</span>
+                  <span class="progress-size-counter" id="progress-size-text">0 KB</span>
+                </div>
+              </div>
+
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progress-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div id="install-error-box" class="install-error-card" style="display: none;">
+              <div class="error-card-header">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF5C5C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <h3 class="error-title">تعذر إكمال التثبيت</h3>
+              </div>
+              <p class="error-desc" id="install-error-msg">حدث خطأ غير متوقع أثناء نسخ الملفات.</p>
+              <div class="error-actions">
+                <button class="btn btn-secondary" id="btn-retry-install">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                  <span>إعادة المحاولة</span>
+                </button>
+                <button class="btn btn-ghost" id="btn-error-back">
+                  <span>العودة للخطوة السابقة</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="task-checklist">
+              <div class="task-row" id="task-1">
+                <div class="task-icon-circle done">
+                  <svg class="task-done-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </div>
+                <span class="task-name">فحص مجلد Affinity وصلاحيات النظام</span>
+                <span class="task-status-tag done">مكتمل</span>
+              </div>
+
+              <div class="task-row" id="task-2">
+                <div class="task-icon-circle pending"></div>
+                <span class="task-name">إنشاء نسخة احتياطية لملفات البرنامج الأصلية</span>
+                <span class="task-status-tag pending">في الانتظار</span>
+              </div>
+
+              <div class="task-row" id="task-3">
+                <div class="task-icon-circle pending"></div>
+                <span class="task-name">تثبيت مكتبة التشكيل العربي ومحرك النصوص BiDi</span>
+                <span class="task-status-tag pending">في الانتظار</span>
+              </div>
+
+              <div class="task-row" id="task-4">
+                <div class="task-icon-circle pending"></div>
+                <span class="task-name">تهيئة المشغل واختصار سطح المكتب والتحقق النهائي</span>
+                <span class="task-status-tag pending">في الانتظار</span>
+              </div>
+            </div>
+
+            <div class="install-target-card">
+              <div class="target-card-header">
+                <span class="target-app-spec" id="s4-target-spec">AFFINITY</span>
+                <div class="target-mode-pill">
+                  <span id="s4-mode-label">دمج تلقائي مع التطبيق</span>
+                </div>
+              </div>
+              <div class="target-path-line" id="s4-target-path">C:\Program Files\Affinity\Affinity</div>
+            </div>
+          </div>
+
+          <footer class="view-footer">
+            <span class="status-neutral-text" id="install-timer">يرجى الانتظار حتى اكتمال التثبيت...</span>
+          </footer>
+        </section>
+
+        <section id="step-05" class="step-view">
+          <div class="view-header">
+            <h1 class="view-title">تم إعداد أفينتي بالعربية</h1>
+            <p class="view-subtitle">أصبح البرنامج جاهزًا الآن مع دعم كامل للتشكيل والكتابة باللغة العربية.</p>
+          </div>
+
+          <div class="view-body">
+            <div class="success-hero-card">
+              <div class="success-hero-text">
+                <h2 class="success-hero-title" id="s5-hero-title">تم التثبيت بنجاح</h2>
+                <span class="success-hero-tag" id="s5-status-tag">أفينتي جاهز لإبداعك.</span>
+              </div>
+              <div class="success-badge-circle">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="card final-summary-card">
+              <div class="summary-line">
+                <span class="summary-val" id="s5-final-app">Affinity</span>
+                <span class="summary-key">التطبيق</span>
+              </div>
+              <div class="summary-line">
+                <span class="summary-val" id="s5-final-mode">دمج تلقائي مع التطبيق</span>
+                <span class="summary-key">طريقة التثبيت</span>
+              </div>
+              <div class="summary-divider"></div>
+              <div class="summary-path-box" id="s5-final-path">
+                C:\Program Files\Affinity\Affinity
+              </div>
+            </div>
+          </div>
+
+          <footer class="view-footer">
+            <div class="action-buttons-group">
+              <button class="btn btn-primary" id="btn-launch-app">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                </svg>
+                <span>تشغيل Affinity الآن</span>
+              </button>
+              <button class="btn btn-coffee" id="btn-open-support">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+                  <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+                  <line x1="6" y1="1" x2="6" y2="4"/>
+                  <line x1="10" y1="1" x2="10" y2="4"/>
+                  <line x1="14" y1="1" x2="14" y2="4"/>
+                </svg>
+                <span class="coffee-sep"></span>
+                <span class="btn-coffee-label">
+                  <span class="btn-coffee-label-main">اشترِ لنا قهوة</span>
+                  <span class="btn-coffee-label-alt">ادعم استمرار المشروع</span>
+                </span>
+              </button>
+            </div>
+            <button class="btn btn-ghost" id="btn-finish-close">
+              <span>إغلاق</span>
+            </button>
+          </footer>
+        </section>
+
+      </div>
+    </main>
+
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo-box">
+          <img src="assets/Frame.png" alt="Affinity Arabic Logo" class="sidebar-logo" />
+        </div>
+        <div class="sidebar-brand-text">
+          <h2 class="sidebar-title">أفينتي بالعربية</h2>
+        </div>
+      </div>
+
+      <nav class="stepper-nav">
+        <div class="stepper-item active" data-step="1">
+          <div class="stepper-text">
+            <span class="stepper-title">مرحبًا بك</span>
+            <span class="stepper-status">الخطوة الحالية</span>
+          </div>
+          <div class="stepper-indicator">
+            <span class="step-num">1</span>
+            <svg class="step-check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="2">
+          <div class="stepper-text">
+            <span class="stepper-title">مجلد التطبيق</span>
+            <span class="stepper-status"></span>
+          </div>
+          <div class="stepper-indicator">
+            <span class="step-num">2</span>
+            <svg class="step-check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="3">
+          <div class="stepper-text">
+            <span class="stepper-title">طريقة التثبيت</span>
+            <span class="stepper-status"></span>
+          </div>
+          <div class="stepper-indicator">
+            <span class="step-num">3</span>
+            <svg class="step-check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="4">
+          <div class="stepper-text">
+            <span class="stepper-title">جارٍ التثبيت</span>
+            <span class="stepper-status"></span>
+          </div>
+          <div class="stepper-indicator">
+            <span class="step-num">4</span>
+            <svg class="step-check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="5">
+          <div class="stepper-text">
+            <span class="stepper-title">اكتمل الإعداد</span>
+            <span class="stepper-status"></span>
+          </div>
+          <div class="stepper-indicator">
+            <span class="step-num">5</span>
+            <svg class="step-check-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="footer-patch-ver" id="sidebar-footer-text">AFFINITY ARABIC • v1.0.0</span>
+        <button type="button" class="footer-author-link" id="btn-author-twitter" title="زيارة حساب المطور على منصة X (تويتر)">
+          <svg class="author-x-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+          <span>تطوير: حيّان (@HayyanCodes)</span>
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

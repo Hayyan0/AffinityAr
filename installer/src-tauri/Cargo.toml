@@ -1,0 +1,28 @@
+[package]
+name = "affinity-arabic-installer"
+version = "1.0.0"
+description = "Affinity Arabic Support Installer"
+authors = ["Hayyan (@HayyanCodes)"]
+homepage = "https://x.com/HayyanCodes"
+edition = "2021"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+rfd = "0.15"
+open = "5"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
