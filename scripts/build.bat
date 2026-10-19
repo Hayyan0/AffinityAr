@@ -96,6 +96,9 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+if "%SKIP_TESTS%"=="1" goto :skip_test_runner
+if not exist "%TESTS_DIR%\native_tests.cpp" goto :skip_test_runner
+
 echo.
 echo Compiling test_runner.exe (Native C++ Test Suite)...
 cl.exe /nologo /O2 /MD /std:c++17 /EHsc /utf-8 ^
@@ -114,6 +117,8 @@ if %ERRORLEVEL% neq 0 (
     popd
     exit /b 1
 )
+
+:skip_test_runner
 
 echo.
 echo Compiling AffinityArabic.exe (1-Click Launcher with Custom Icon)...
@@ -170,7 +175,7 @@ echo Build Successful!
 echo Hook DLL: %BIN_DIR%\affinity_arabic.dll
 echo Proxy DLL: %BIN_DIR%\version.dll
 echo Seamless DLL: %BIN_DIR%\libstacktrace.dll
-echo Test Runner: %BIN_DIR%\test_runner.exe
+if exist "%BIN_DIR%\test_runner.exe" echo Test Runner: %BIN_DIR%\test_runner.exe
 echo Launcher: %BIN_DIR%\AffinityArabic.exe
 echo ========================================================
 exit /b 0
