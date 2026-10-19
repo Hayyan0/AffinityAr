@@ -933,6 +933,7 @@ p {
 
 .site-logo .logo {
   transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-radius: 10px;
 }
 
 .site-logo:hover .logo {
