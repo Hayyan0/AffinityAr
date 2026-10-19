@@ -61,9 +61,6 @@ jobs:
       - name: Determine Tag & Release Metadata
         id: meta
         shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = "1.0.0"
           if (Test-Path "version.txt") {
@@ -72,32 +69,15 @@ jobs:
 
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $tagName = $env:GITHUB_REF_NAME
-            $releaseTitle = "Affinity Arabic $tagName"
           } else {
-            $baseTag = "v$version"
-            $isPublished = $false
-            try {
-              $relJson = gh release view $baseTag --json isDraft 2>$null
-              if ($relJson) {
-                $rel = $relJson | ConvertFrom-Json
-                if ($rel -and (-not $rel.isDraft)) {
-                  $isPublished = $true
-                }
-              }
-            } catch {}
-
-            if ($isPublished) {
-              $tagName = "$baseTag-build.$env:GITHUB_RUN_NUMBER"
-            } else {
-              $tagName = $baseTag
-            }
-            $releaseTitle = "Affinity Arabic $tagName"
+            $tagName = "v$version"
           }
+          $releaseTitle = "Affinity Arabic $tagName"
 
           Write-Host "Draft Release Tag: $tagName"
           Write-Host "Draft Release Title: $releaseTitle"
-          "TAG_NAME=$tagName" >> $env:GITHUB_ENV
-          "RELEASE_TITLE=$releaseTitle" >> $env:GITHUB_ENV
+          "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Create or Update Draft Release
         uses: softprops/action-gh-release@v2
