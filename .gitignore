@@ -1,7 +1,6 @@
 # Build outputs
 bin/
 backup/
-docs/
 tests/
 *.old
 

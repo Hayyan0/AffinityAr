@@ -1,0 +1,14 @@
+{
+  "name": "affinity-arabic-landing",
+  "version": "1.0.0",
+  "description": "Affinity Arabic landing page and GitHub Pages site",
+  "type": "module",
+  "main": "devserver.js",
+  "scripts": {
+    "dev": "node devserver.js",
+    "start": "node devserver.js"
+  },
+  "keywords": ["affinity", "arabic", "landing-page", "github-pages"],
+  "author": "Hayyan",
+  "license": "GPL-3.0"
+}
