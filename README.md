@@ -42,7 +42,7 @@
 
 لا يتطلب التثبيت أي خطوات معقدة أو نقل يدوي للملفات:
 
-1. حمّل ملف التثبيت `AffinityArabicSetup.exe` وشغّله.
+1. حمّل ملف التثبيت [`AffinityArabicSetup.exe`](https://github.com/Hayyan0/AffinityAr/releases/latest/download/AffinityArabicSetup.exe) وشغّله.
 2. سيتعرف المثبّت تلقائياً على مسار برنامج Affinity في جهازك.
 3. اضغط على **تثبيت**، ثم افتح Affinity كالمعتاد وستجد العربية تعمل معك مباشرة.
 
