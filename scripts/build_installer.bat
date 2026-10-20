@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 echo ========================================================
 echo Building Affinity Arabic Installer (Tauri 2)
@@ -11,6 +11,35 @@ set "INSTALLER_DIR=%ROOT_DIR%\installer\src-tauri"
 set "BIN_DIR=%ROOT_DIR%\bin"
 
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
+
+:: Ensure all required runtime binaries are built before compiling installer
+if not exist "%BIN_DIR%\AffinityArabic.exe" (
+    echo Required binary AffinityArabic.exe not found in %BIN_DIR%.
+    echo Running build.bat first...
+    call "%SCRIPT_DIR%build.bat"
+    if !ERRORLEVEL! neq 0 (
+        echo Failed to build required runtime binaries!
+        exit /b !ERRORLEVEL!
+    )
+)
+if not exist "%BIN_DIR%\affinity_arabic.dll" (
+    echo Required binary affinity_arabic.dll not found in %BIN_DIR%.
+    echo Running build.bat first...
+    call "%SCRIPT_DIR%build.bat"
+    if !ERRORLEVEL! neq 0 (
+        echo Failed to build required runtime binaries!
+        exit /b !ERRORLEVEL!
+    )
+)
+if not exist "%BIN_DIR%\libstacktrace.dll" (
+    echo Required binary libstacktrace.dll not found in %BIN_DIR%.
+    echo Running build.bat first...
+    call "%SCRIPT_DIR%build.bat"
+    if !ERRORLEVEL! neq 0 (
+        echo Failed to build required runtime binaries!
+        exit /b !ERRORLEVEL!
+    )
+)
 
 pushd "%INSTALLER_DIR%"
 
