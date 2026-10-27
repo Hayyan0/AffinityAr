@@ -75,6 +75,8 @@ jobs:
 
       - name: Build & Pack Installer
         shell: cmd
+        env:
+          SKIP_NATIVE_BUILD: "1"
         run: scripts\build_installer.bat
 
       - name: Verify Installer Artifact

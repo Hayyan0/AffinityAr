@@ -20,11 +20,16 @@ const invoke = async (cmd, args = {}) => {
 
 const state = {
   currentStep: 1,
+  detectedInstallations: [],
   selectedApp: {
     name: "Affinity",
-    path: "C:\\Program Files\\Affinity\\Affinity",
-    exe_path: "C:\\Program Files\\Affinity\\Affinity\\Affinity.exe",
-    version: "3.2.x"
+    path: "",
+    exe_path: "",
+    version: "",
+    install_type: "",
+    badge: "",
+    description: "",
+    detected: false
   },
   systemInfo: {
     free_disk: "20+ GB",
@@ -32,11 +37,17 @@ const state = {
   },
   installMode: "embedded",
   isTransitioning: false,
+  pendingStep: null,
   isInstalling: false,
   launcherPath: "",
-  isUpdateMode: false, 
+  isUpdateMode: false,
   existingVersion: ""
 };
+
+function hasValidTarget() {
+  return !!(state.selectedApp && state.selectedApp.detected &&
+            state.selectedApp.path && state.selectedApp.exe_path);
+}
 
 const dom = {
   splash: document.getElementById('splash-screen'),
@@ -47,13 +58,21 @@ const dom = {
   stepperItems: document.querySelectorAll('.stepper-item'),
 
   // Step 1
+  s1SingleCard: document.getElementById('s1-single-app-card'),
+  s1MultiSection: document.getElementById('s1-multi-version-section'),
+  s1VersionCardsList: document.getElementById('s1-version-cards-list'),
   s1Name: document.getElementById('s1-detected-name'),
   s1Sub: document.getElementById('s1-detected-sub'),
+  s1Badge: document.getElementById('s1-detected-badge'),
   btnToStep2: document.getElementById('btn-to-step2'),
 
   // Step 2
+  s2SummaryCard: document.getElementById('s2-summary-card'),
   s2Name: document.getElementById('s2-detected-name'),
   s2Sub: document.getElementById('s2-detected-sub'),
+  s2DetectedBadgeText: document.getElementById('s2-detected-badge-text'),
+  versionSelectSection: document.getElementById('version-select-section'),
+  versionCardsList: document.getElementById('version-cards-list'),
   existingInstallCard: document.getElementById('existing-install-card'),
   existingInstallDetails: document.getElementById('existing-install-details'),
   btnUninstallExisting: document.getElementById('btn-uninstall-existing'),
@@ -67,6 +86,12 @@ const dom = {
   // Step 3
   cardLauncher: document.getElementById('mode-card-launcher'),
   cardEmbedded: document.getElementById('mode-card-embedded'),
+  modeLauncherDesc: document.getElementById('mode-card-launcher-desc'),
+  modeLauncherCheck1: document.getElementById('mode-card-launcher-check1'),
+  modeLauncherCheck2: document.getElementById('mode-card-launcher-check2'),
+  modeEmbeddedDesc: document.getElementById('mode-card-embedded-desc'),
+  modeEmbeddedCheck1: document.getElementById('mode-card-embedded-check1'),
+  modeEmbeddedCheck2: document.getElementById('mode-card-embedded-check2'),
   btnStartInstall: document.getElementById('btn-start-install'),
   btnBackStep2: document.getElementById('btn-back-step2'),
 
@@ -100,18 +125,22 @@ const dom = {
   s5FinalPath: document.getElementById('s5-final-path'),
   btnLaunchApp: document.getElementById('btn-launch-app'),
   btnOpenSupport: document.getElementById('btn-open-support'),
-  btnOpenTwitter: document.getElementById('btn-open-twitter'),
   btnAuthorTwitter: document.getElementById('btn-author-twitter'),
-  btnFinishClose: document.getElementById('btn-finish-close')
+  btnFinishClose: document.getElementById('btn-finish-close'),
+
+  sidebarFooterText: document.getElementById('sidebar-footer-text')
 };
 
 window.addEventListener('DOMContentLoaded', async () => {
   initWindowControls();
   initStepEvents();
   initModeSelection();
+  updateDetectedUI();
+  updateTargetValidity();
 
   await Promise.all([
     loadSystemInfo(),
+    loadInstallerVersion(),
     detectInstalledAffinity()
   ]);
 
@@ -154,6 +183,10 @@ function initWindowControls() {
     dom.btnClose.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (state.isInstalling) {
+        const confirmed = window.confirm("التثبيت قيد التنفيذ. هل تريد إغلاق المُثبت؟ قد تترك بعض الملفات غير مكتملة.");
+        if (!confirmed) return;
+      }
       try {
         await invoke('close_window');
       } catch (err) {
@@ -165,7 +198,7 @@ function initWindowControls() {
 
 async function loadSystemInfo() {
   try {
-    const info = await invoke('get_system_info', { targetPath: state.selectedApp.path });
+    const info = await invoke('get_system_info', { targetPath: state.selectedApp.path || null });
     if (info) {
       state.systemInfo = info;
       renderStorageInfo();
@@ -175,27 +208,191 @@ async function loadSystemInfo() {
   }
 }
 
+async function loadInstallerVersion() {
+  try {
+    let version = "";
+    if (window.__TAURI__ && window.__TAURI__.app && typeof window.__TAURI__.app.getVersion === 'function') {
+      version = await window.__TAURI__.app.getVersion();
+    }
+    if (!version && window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+      version = await window.__TAURI_INTERNALS__.invoke('plugin:app|version');
+    }
+    if (version && dom.sidebarFooterText) {
+      dom.sidebarFooterText.textContent = `AFFINITY ARABIC • v${version}`;
+    }
+  } catch (err) {
+    console.warn("Failed to read installer version:", err);
+  }
+}
+
 async function detectInstalledAffinity() {
   try {
     const list = await invoke('detect_installations');
     if (Array.isArray(list) && list.length > 0) {
-      const found = list.find(a => a.path.toLowerCase().includes("affinity\\affinity")) || list[0];
+      state.detectedInstallations = list;
+      const found = list.find(a => a.install_type === "enterprise") || list[0];
+      state.selectedApp = { ...found };
+    } else {
+      state.detectedInstallations = [];
       state.selectedApp = {
-        name: found.name,
-        path: found.path,
-        exe_path: found.exe_path,
-        version: found.version || "3.2.x"
+        name: "Affinity",
+        path: "",
+        exe_path: "",
+        version: "",
+        install_type: "",
+        badge: "NOT FOUND",
+        description: "",
+        detected: false
       };
     }
   } catch (err) {
     console.warn("Detection warning:", err);
   }
 
+  renderVersionSelector();
   updateDetectedUI();
+  updateTargetValidity();
+  updateModeCardsForApp();
   await checkExistingInstallation();
 }
 
+function renderVersionSelector() {
+  const list = state.detectedInstallations;
+  const isMulti = (Array.isArray(list) && list.length > 1);
+
+  // Step 1: Multi Section vs Single Card
+  if (dom.s1MultiSection && dom.s1SingleCard) {
+    if (isMulti) {
+      dom.s1MultiSection.style.display = 'block';
+      dom.s1SingleCard.style.display = 'none';
+      renderCardsIntoContainer(dom.s1VersionCardsList, list);
+    } else {
+      dom.s1MultiSection.style.display = 'none';
+      dom.s1SingleCard.style.display = 'flex';
+    }
+  }
+
+  // Step 2: Multi Section vs Summary Card
+  if (dom.versionSelectSection && dom.versionCardsList) {
+    if (isMulti) {
+      dom.versionSelectSection.style.display = 'block';
+      if (dom.s2SummaryCard) dom.s2SummaryCard.style.display = 'none';
+      renderCardsIntoContainer(dom.versionCardsList, list);
+    } else {
+      dom.versionSelectSection.style.display = 'none';
+      if (dom.s2SummaryCard) dom.s2SummaryCard.style.display = 'flex';
+    }
+  }
+}
+
+function renderCardsIntoContainer(container, list) {
+  if (!container) return;
+  container.replaceChildren();
+
+  list.forEach((app) => {
+    const isSelected = (state.selectedApp.path && state.selectedApp.path.toLowerCase() === app.path.toLowerCase());
+    const card = document.createElement('div');
+    card.className = `version-option-card ${isSelected ? 'selected' : ''}`;
+    card.dataset.path = app.path || '';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+
+    const right = document.createElement('div');
+    right.className = 'version-option-right';
+    const radio = document.createElement('div');
+    radio.className = 'version-radio-circle';
+    const texts = document.createElement('div');
+    texts.className = 'version-option-texts';
+    const title = document.createElement('span');
+    title.className = 'version-option-title';
+    title.textContent = app.name;
+    const desc = document.createElement('span');
+    desc.className = 'version-option-desc';
+    desc.textContent = app.description || app.path;
+    texts.append(title, desc);
+    right.append(radio, texts);
+
+    const badge = document.createElement('span');
+    badge.className = 'version-option-badge';
+    badge.textContent = app.badge || (app.install_type === 'msix' ? 'STORE / MSIX' : 'ENTERPRISE');
+
+    card.append(right, badge);
+
+    const activate = async () => { await selectTargetApp(app); };
+    card.addEventListener('click', activate);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activate();
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+async function selectTargetApp(app) {
+  state.selectedApp = { ...app };
+
+  document.querySelectorAll('.version-option-card').forEach((c) => {
+    const selectedPath = state.selectedApp.path ? state.selectedApp.path.toLowerCase() : '';
+    if (c.dataset.path && c.dataset.path.toLowerCase() === selectedPath) {
+      c.classList.add('selected');
+    } else {
+      c.classList.remove('selected');
+    }
+  });
+
+  updateDetectedUI();
+  updateTargetValidity();
+  updateModeCardsForApp();
+  await loadSystemInfo();
+  await checkExistingInstallation();
+}
+
+function updateModeCardsForApp() {
+  const isMsix = (state.selectedApp.install_type === "msix");
+
+  if (dom.modeLauncherDesc) {
+    dom.modeLauncherDesc.textContent = isMsix
+      ? "تشغيل نسخة المتجر (MSIX) عبر مشغّل مستقل يقوم بحقن التعريب تلقائياً دون لمس حزمة المتجر الأصلية."
+      : "تشغيل البرنامج عبر اختصار مستقل AffinityArabic.exe دون استبدال ملفات Affinity الأصلية.";
+  }
+  if (dom.modeLauncherCheck1) {
+    dom.modeLauncherCheck1.textContent = isMsix
+      ? "إنشاء اختصار مباشر على سطح المكتب (Affinity Arabic)"
+      : "إنشاء اختصار مباشر على سطح المكتب";
+  }
+  if (dom.modeLauncherCheck2) {
+    dom.modeLauncherCheck2.textContent = isMsix
+      ? "يعمل بتوافق كامل مع تحديثات المتجر دون كسر التوقيع الرقمي"
+      : "لا يستبدل أي ملف أصلي في مجلد Affinity";
+  }
+
+  if (dom.modeEmbeddedDesc) {
+    dom.modeEmbeddedDesc.textContent = isMsix
+      ? "دمج التعريب داخل حزمة MSIX وتسجيلها بحيث يعمل تلقائياً عند فتح Affinity من قائمة ابدأ أو شريط المهام."
+      : "تفعيل التعريب مباشرة عند فتح Affinity من أي اختصار أو مستند وبشكل سلس وتلقائي.";
+  }
+  if (dom.modeEmbeddedCheck1) {
+    dom.modeEmbeddedCheck1.textContent = isMsix
+      ? "يعمل تلقائياً مع قائمة ابدأ وشريط المهام والملفات المفتوحة"
+      : "يعمل تلقائيًا مع كافة اختصارات وملفات البرنامج";
+  }
+  if (dom.modeEmbeddedCheck2) {
+    dom.modeEmbeddedCheck2.textContent = isMsix
+      ? "تسجيل الحزمة المدمجة في ويندوز مع الحفاظ على كافة الوظائف"
+      : "حفظ نسخة احتياطية للملفات الأصلية تلقائيًا";
+  }
+}
+
 async function checkExistingInstallation() {
+  if (!state.selectedApp.path) {
+    state.isUpdateMode = false;
+    state.existingVersion = "";
+    if (dom.existingInstallCard) dom.existingInstallCard.style.display = 'none';
+    return;
+  }
   try {
     const result = await invoke('check_existing_install', { targetPath: state.selectedApp.path });
     const installed = !!(result && result.installed);
@@ -246,6 +443,8 @@ function resetUninstallUI() {
 
 async function uninstallExisting() {
   if (!dom.btnUninstallExisting || state.isInstalling) return;
+  const confirmed = window.confirm("هل تريد إزالة تعريب Affinity واسترجاع الملفات الأصلية؟");
+  if (!confirmed) return;
   state.isInstalling = true;
   dom.btnUninstallExisting.disabled = true;
   const label = dom.btnUninstallExisting.querySelector('span');
@@ -272,7 +471,11 @@ async function uninstallExisting() {
     }
   } finally {
     state.isInstalling = false;
-    if (dom.btnUninstallExisting) dom.btnUninstallExisting.disabled = false;
+    if (dom.btnUninstallExisting) {
+      dom.btnUninstallExisting.disabled = false;
+      const currentLabel = dom.btnUninstallExisting.querySelector('span');
+      if (currentLabel) currentLabel.textContent = "إزالة التعريب";
+    }
   }
 }
 
@@ -293,26 +496,66 @@ function renderStorageInfo() {
 
 function updateDetectedUI() {
   const app = state.selectedApp;
+  const valid = hasValidTarget();
 
-  if (dom.s1Name) dom.s1Name.textContent = app.name;
-  if (dom.s1Sub) dom.s1Sub.textContent = `الإصدار ${app.version}`;
+  if (valid) {
+    if (dom.s1Name) dom.s1Name.textContent = app.name;
+    if (dom.s1Sub) dom.s1Sub.textContent = `الإصدار ${app.version}`;
+    if (dom.s1Badge) dom.s1Badge.textContent = app.badge || "AFFINITY";
 
-  if (dom.s2Name) dom.s2Name.textContent = app.name;
-  if (dom.s2Sub) dom.s2Sub.textContent = `الإصدار ${app.version} • متوافق`;
-  if (dom.targetPathField) dom.targetPathField.value = app.path;
+    if (dom.s2Name) dom.s2Name.textContent = app.name;
+    if (dom.s2Sub) dom.s2Sub.textContent = `الإصدار ${app.version} • متوافق`;
+    if (dom.s2DetectedBadgeText) dom.s2DetectedBadgeText.textContent = app.badge || "عُثر عليه";
+    if (dom.targetPathField) dom.targetPathField.value = app.path;
+    if (dom.pathValidationTxt) {
+      dom.pathValidationTxt.textContent = "";
+      dom.pathValidationTxt.parentElement.className = "";
+    }
+  } else {
+    if (dom.s1Name) dom.s1Name.textContent = "لم يتم العثور على Affinity";
+    if (dom.s1Sub) dom.s1Sub.textContent = "ثبّت Affinity أو حدّد مجلد التثبيت يدوياً من الخطوة التالية.";
+    if (dom.s1Badge) dom.s1Badge.textContent = "NOT FOUND";
+
+    if (dom.s2Name) dom.s2Name.textContent = "لم يتم العثور على Affinity";
+    if (dom.s2Sub) dom.s2Sub.textContent = "استخدم زر التصفح لتحديد مجلد يحتوي على Affinity.exe";
+    if (dom.s2DetectedBadgeText) dom.s2DetectedBadgeText.textContent = "NOT FOUND";
+    if (dom.targetPathField) dom.targetPathField.value = app.path || "";
+  }
 
   renderStorageInfo();
 
-  if (dom.s4TargetSpec) dom.s4TargetSpec.textContent = `${app.name.toUpperCase()} (v${app.version})`;
-  if (dom.s4TargetPath) dom.s4TargetPath.textContent = app.path;
+  if (dom.s4TargetSpec) {
+    dom.s4TargetSpec.textContent = valid
+      ? `${app.name.toUpperCase()} (v${app.version})`
+      : "بانتظار تحديد مجلد Affinity";
+  }
+  if (dom.s4TargetPath) dom.s4TargetPath.textContent = app.path || "";
 
-  if (dom.s5FinalApp) dom.s5FinalApp.textContent = `${app.name} (${app.version})`;
-  if (dom.s5FinalPath) dom.s5FinalPath.textContent = app.path;
+  if (dom.s5FinalApp) {
+    dom.s5FinalApp.textContent = valid ? `${app.name} (${app.version})` : "";
+  }
+  if (dom.s5FinalPath) dom.s5FinalPath.textContent = app.path || "";
+}
+
+function updateTargetValidity() {
+  const valid = hasValidTarget();
+  if (dom.btnToStep3) dom.btnToStep3.disabled = !valid;
+  if (dom.btnStartInstall) {
+    dom.btnStartInstall.disabled = !valid || state.isInstalling;
+  }
+  return valid;
 }
 
 function navigateToStep(newStep) {
-  if (state.isTransitioning || newStep === state.currentStep) return;
-  state.isTransitioning = true;
+  // A navigation requested mid-animation must be queued, not dropped: the
+  // install-complete handler navigates to step 5 while step 4 may still be
+  // animating in, and an early return here would leave the UI stuck forever.
+  if (state.isTransitioning) {
+    state.pendingStep = newStep;
+    return;
+  }
+
+  if (newStep === state.currentStep) return;
 
   const currentStepEl = document.getElementById(`step-0${state.currentStep}`);
   const nextStepEl = document.getElementById(`step-0${newStep}`);
@@ -322,6 +565,7 @@ function navigateToStep(newStep) {
     return;
   }
 
+  state.isTransitioning = true;
   currentStepEl.classList.remove('page-enter');
   currentStepEl.classList.add('page-exit');
 
@@ -336,6 +580,12 @@ function navigateToStep(newStep) {
     setTimeout(() => {
       nextStepEl.classList.remove('page-enter');
       state.isTransitioning = false;
+
+      if (state.pendingStep !== null) {
+        const queuedStep = state.pendingStep;
+        state.pendingStep = null;
+        navigateToStep(queuedStep);
+      }
     }, 350);
   }, 220);
 }
@@ -380,25 +630,33 @@ function initStepEvents() {
           dom.targetPathField.value = picked;
           const validation = await invoke('validate_folder', { folderPath: picked });
           if (validation && validation.detected) {
-            state.selectedApp.path = picked;
-            state.selectedApp.name = validation.name;
-            state.selectedApp.exe_path = validation.exe_path;
-            state.selectedApp.version = validation.version;
-            updateDetectedUI();
-            if (dom.btnToStep3) dom.btnToStep3.disabled = false;
+            const existingIdx = state.detectedInstallations.findIndex(a => a.path.toLowerCase() === validation.path.toLowerCase());
+            if (existingIdx === -1) {
+              state.detectedInstallations.push(validation);
+            } else {
+              state.detectedInstallations[existingIdx] = validation;
+            }
+            renderVersionSelector();
+            await selectTargetApp(validation);
             if (dom.pathValidationTxt) {
-              dom.pathValidationTxt.textContent = `المجلد صالح ويحتوي على ${validation.name} (Affinity.exe)`;
+              dom.pathValidationTxt.textContent = `المجلد صالح: ${validation.name}`;
               dom.pathValidationTxt.parentElement.className = "status-valid";
             }
           } else {
-            state.selectedApp.path = picked;
-            if (dom.btnToStep3) dom.btnToStep3.disabled = true;
+            state.selectedApp = {
+              name: "Affinity",
+              path: picked,
+              exe_path: "",
+              version: "",
+              install_type: "",
+              badge: "NOT FOUND",
+              description: "",
+              detected: false
+            };
+            updateDetectedUI();
+            updateTargetValidity();
             if (dom.pathValidationTxt) {
-              if (validation && validation.name && validation.name.includes("غير مدعوم")) {
-                dom.pathValidationTxt.textContent = "تنبيه: هذا التعريب مخصص للنسخة الموحدة (Affinity.exe) ولا يدعم الإصدارات القديمة";
-              } else {
-                dom.pathValidationTxt.textContent = "تحذير: لم يتم العثور على ملف Affinity.exe في هذا المجلد";
-              }
+              dom.pathValidationTxt.textContent = "تحذير: لم يتم العثور على ملف Affinity.exe في هذا المجلد. التعريب يدعم نسخة Affinity الموحدة فقط.";
               dom.pathValidationTxt.parentElement.className = "status-invalid";
             }
           }
@@ -421,6 +679,7 @@ function initStepEvents() {
 
   if (dom.btnStartInstall) {
     dom.btnStartInstall.addEventListener('click', () => {
+      if (state.isInstalling || !updateTargetValidity()) return;
       navigateToStep(4);
       runInstallationProcess();
     });
@@ -428,6 +687,7 @@ function initStepEvents() {
 
   if (dom.btnRetryInstall) {
     dom.btnRetryInstall.addEventListener('click', () => {
+      if (state.isInstalling) return;
       runInstallationProcess();
     });
   }
@@ -441,14 +701,22 @@ function initStepEvents() {
 
   if (dom.btnLaunchApp) {
     dom.btnLaunchApp.addEventListener('click', async () => {
+      const useLauncher = state.installMode === "launcher" && state.launcherPath;
+      const exeToLaunch = useLauncher ? state.launcherPath : state.selectedApp.exe_path;
+      const launchType = useLauncher ? "launcher" : state.selectedApp.install_type;
+      if (!exeToLaunch) {
+        window.alert("تعذر تحديد مسار تشغيل Affinity.");
+        return;
+      }
       try {
-        const exeToLaunch = (state.installMode === "launcher" && state.launcherPath)
-          ? state.launcherPath
-          : state.selectedApp.exe_path;
-        await invoke('launch_affinity', { exePath: exeToLaunch });
+        await invoke('launch_affinity', {
+          exePath: exeToLaunch,
+          installType: launchType
+        });
         setTimeout(() => invoke('close_window'), 800);
       } catch (err) {
         console.error("Launch error:", err);
+        window.alert(`تعذر تشغيل Affinity:\n${String(err)}`);
       }
     });
   }
@@ -484,42 +752,65 @@ function initStepEvents() {
   }
 
   dom.stepperItems.forEach(item => {
-    item.addEventListener('click', () => {
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    const goBack = () => {
       const stepNum = parseInt(item.getAttribute('data-step'), 10);
       if (stepNum < state.currentStep && state.currentStep !== 4 && !state.isInstalling) {
         navigateToStep(stepNum);
+      }
+    };
+    item.addEventListener('click', goBack);
+    item.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        goBack();
       }
     });
   });
 }
 
+function selectInstallMode(mode) {
+  state.installMode = mode;
+  const launcherSelected = mode === "launcher";
+  const cards = [
+    [dom.cardLauncher, launcherSelected],
+    [dom.cardEmbedded, !launcherSelected]
+  ];
+  cards.forEach(([card, selected]) => {
+    if (!card) return;
+    card.classList.toggle('selected', selected);
+    card.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    const radio = card.querySelector('.mode-radio-circle');
+    const icon = card.querySelector('.mode-icon-box');
+    if (radio) radio.classList.toggle('active', selected);
+    if (icon) icon.classList.toggle('active', selected);
+  });
+}
+
 function initModeSelection() {
-  if (dom.cardLauncher && dom.cardEmbedded) {
-    dom.cardLauncher.addEventListener('click', () => {
-      state.installMode = "launcher";
-      dom.cardLauncher.classList.add('selected');
-      dom.cardLauncher.querySelector('.mode-radio-circle').classList.add('active');
-      dom.cardLauncher.querySelector('.mode-icon-box').classList.add('active');
-
-      dom.cardEmbedded.classList.remove('selected');
-      dom.cardEmbedded.querySelector('.mode-radio-circle').classList.remove('active');
-      dom.cardEmbedded.querySelector('.mode-icon-box').classList.remove('active');
+  if (!dom.cardLauncher || !dom.cardEmbedded) return;
+  [dom.cardLauncher, dom.cardEmbedded].forEach((card) => {
+    const mode = card.dataset.mode;
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.addEventListener('click', () => selectInstallMode(mode));
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectInstallMode(mode);
+      }
     });
-
-    dom.cardEmbedded.addEventListener('click', () => {
-      state.installMode = "embedded";
-      dom.cardEmbedded.classList.add('selected');
-      dom.cardEmbedded.querySelector('.mode-radio-circle').classList.add('active');
-      dom.cardEmbedded.querySelector('.mode-icon-box').classList.add('active');
-
-      dom.cardLauncher.classList.remove('selected');
-      dom.cardLauncher.querySelector('.mode-radio-circle').classList.remove('active');
-      dom.cardLauncher.querySelector('.mode-icon-box').classList.remove('active');
-    });
-  }
+  });
+  selectInstallMode(state.installMode);
 }
 
 async function runInstallationProcess() {
+  if (state.isInstalling) return;
+  if (!state.selectedApp.path || !state.selectedApp.exe_path) {
+    return;
+  }
+  if (!updateTargetValidity()) return;
   state.isInstalling = true;
   const updating = state.isUpdateMode;
 
@@ -537,9 +828,11 @@ async function runInstallationProcess() {
   }
 
   const payloadStr = getFormattedPayloadSize();
-  const totalKb = state.systemInfo.payload_size_kb || 546;
 
-  setProgress(0, "بدء تهيئة الملفات...", `0 KB / ${payloadStr}`);
+  // The copy is a single Rust call; show an indeterminate bar rather than
+  // pretending that timed phases have completed before they actually have.
+  setProgress(0, "جارٍ نسخ الملفات وإعداد التعريب...", payloadStr);
+  if (dom.progressFill) dom.progressFill.classList.add('indeterminate');
   setTaskState(0, 'running');
   setTaskState(1, 'pending');
   setTaskState(2, 'pending');
@@ -553,20 +846,11 @@ async function runInstallationProcess() {
     target_path: state.selectedApp.path,
     install_seamless_dll: state.installMode === 'embedded',
     install_launcher: state.installMode === 'launcher',
-    create_desktop_shortcut: true
+    create_desktop_shortcut: true,
+    install_type: state.selectedApp.install_type || 'enterprise'
   };
 
   try {
-    await delay(250);
-    setProgress(25, "فحص مجلد Affinity وصلاحيات النظام...", `${Math.round(totalKb * 0.25)} KB / ${payloadStr}`);
-    setTaskState(0, 'done');
-    setTaskState(1, 'running');
-
-    await delay(300);
-    setProgress(50, "إنشاء نسخة احتياطية للملفات الأصلية...", `${Math.round(totalKb * 0.5)} KB / ${payloadStr}`);
-    setTaskState(1, 'done');
-    setTaskState(2, 'running');
-
     const installResponse = await invoke('install_package', { options: installOptions });
     if (!installResponse || !installResponse.success) {
       throw new Error(installResponse ? installResponse.message : "فشلت عملية التثبيت لأسباب غير معروفة.");
@@ -576,12 +860,11 @@ async function runInstallationProcess() {
       state.launcherPath = installResponse.launcher_path;
     }
 
-    setProgress(80, "تثبيت مكتبة التشكيل العربي ومحرك النصوص...", `${Math.round(totalKb * 0.8)} KB / ${payloadStr}`);
+    if (dom.progressFill) dom.progressFill.classList.remove('indeterminate');
+    setProgress(100, "اكتمل التثبيت بنجاح!", payloadStr);
+    setTaskState(0, 'done');
+    setTaskState(1, 'done');
     setTaskState(2, 'done');
-    setTaskState(3, 'running');
-
-    await delay(350);
-    setProgress(100, "اكتمل التثبيت بنجاح!", `${totalKb} KB / ${payloadStr}`);
     setTaskState(3, 'done');
 
     if (dom.installTimer) {
@@ -606,6 +889,7 @@ async function runInstallationProcess() {
 
   } catch (err) {
     state.isInstalling = false;
+    if (dom.progressFill) dom.progressFill.classList.remove('indeterminate');
     console.error("Installation failed:", err);
 
     markActiveTaskError();
@@ -618,6 +902,7 @@ async function runInstallationProcess() {
     if (dom.installTimer) {
       dom.installTimer.textContent = "توقف التثبيت بسبب خطأ.";
     }
+    updateTargetValidity();
   }
 }
 
@@ -671,8 +956,4 @@ function markActiveTaskError() {
       setTaskState(i, 'error');
     }
   });
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

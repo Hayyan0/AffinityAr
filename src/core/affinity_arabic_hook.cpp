@@ -167,7 +167,6 @@ typedef void (*FnLinePartCalculateWidths)(void* pThis, int startIndex, int endIn
 typedef PointDbl* (*FnLinePartGetBasePosition)(void* pThis, PointDbl* outPoint, int index, bool b);
 typedef RectDbl* (*FnLinePartGetHighlightBox)(void* pThis, RectDbl* outRect, int startIndex, int endIndex, bool b);
 typedef void (*FnSelectionMoveCaret)(void* pThis, int moveCaret, bool isSelect, const void* param_4);
-typedef void* (*FnDeleteTextCommandCtor)(void* pThis, int moveCaret, void* pCountedSelection, int flag);
 typedef void (*FnTextRendererDrawTextRunCurves)(
     void* pThis,
     const PointDbl* origin,
@@ -185,7 +184,6 @@ static FnLinePartCalculateWidths g_OriginalLinePartCalculateWidths = nullptr;
 static FnLinePartGetBasePosition g_OriginalLinePartGetBasePosition = nullptr;
 static FnLinePartGetHighlightBox g_OriginalLinePartGetHighlightBox = nullptr;
 static FnSelectionMoveCaret g_OriginalSelectionMoveCaret = nullptr;
-static FnDeleteTextCommandCtor g_OriginalDeleteTextCommandCtor = nullptr;
 static FnTextRendererDrawTextRunCurves g_OriginalTextRendererDrawTextRunCurves = nullptr;
 static FnGsrApplyCore g_OriginalGsrApplyCore = nullptr;
 static FnGprApply g_OriginalGprApplyFalse = nullptr;
@@ -400,8 +398,11 @@ static bool BuildExpandedRenderRun(
     outMetrics.reserve(plan.componentMetrics.size());
     outPositions.reserve(plan.componentMetrics.size());
 
-    for (auto clusterIt = plan.shapedRun.clusters.rbegin(); clusterIt != plan.shapedRun.clusters.rend(); ++clusterIt) {
-        const ShapedGlyphCluster& cluster = *clusterIt;
+    std::vector<size_t> visualClusterIndices = DWriteShaper::GetVisualClusterOrder(plan.shapedRun);
+
+    for (size_t ci : visualClusterIndices) {
+        if (ci >= plan.shapedRun.clusters.size()) continue;
+        const ShapedGlyphCluster& cluster = plan.shapedRun.clusters[ci];
         size_t firstChar = cluster.firstChar;
         size_t charEnd = firstChar + cluster.charCount;
         size_t firstGlyph = cluster.firstGlyph;
@@ -450,15 +451,20 @@ static bool BuildExpandedRenderRun(
             position.advance = adv;
 
             bool isMark = component.isDiacritic;
-            if (!isMark) {
-                const double purePlacementX =
-                    -((double)component.offsetX - ((double)component.advance - (double)component.hmtxAdvance)) * offsetScale;
-                position.dx = purePlacementX;
-                position.dy = -(double)component.offsetY * offsetScale;
+            if (cluster.isRTL) {
+                if (!isMark) {
+                    const double purePlacementX =
+                        -((double)component.offsetX - ((double)component.advance - (double)component.hmtxAdvance)) * offsetScale;
+                    position.dx = purePlacementX;
+                    position.dy = -(double)component.offsetY * offsetScale;
+                } else {
+                    double markOffsetScale = advScale;
+                    position.dx = -ltrAdvBefore + basePurePlacementX - ((double)component.offsetX * markOffsetScale);
+                    position.dy = -((double)component.offsetY * offsetScale);
+                }
             } else {
-                double markOffsetScale = advScale;
-                position.dx = -ltrAdvBefore + basePurePlacementX - ((double)component.offsetX * markOffsetScale);
-                position.dy = -((double)component.offsetY * offsetScale);
+                position.dx = (double)component.offsetX * offsetScale;
+                position.dy = -(double)component.offsetY * offsetScale;
             }
 
             ltrAdvBefore += adv;
@@ -949,12 +955,26 @@ static bool InspectLinePart(void* pThis, size_t* outPrintableCount, std::vector<
 }
 
 static std::atomic<bool> g_CaretInArabic{false};
-static std::atomic<uint64_t> g_LastCaretUpdate{0};
+static std::atomic<bool> g_CaretInRTLParagraph{true};
 static std::atomic<int> g_LastCaretIndex{-1};
-static std::atomic<int> g_LastPrintableCount{0};
 
 static inline bool IsWhitespaceCode(uint32_t c) {
     return (c == 0x20 || c == 0xA0 || (c >= 0x2000 && c <= 0x200B) || c == 0x3000);
+}
+
+static bool IsRTLParagraphForLinePart(void* pLinePart, const std::vector<uint32_t>& codes) {
+    auto plan = FindRenderPlan(pLinePart);
+    if (plan) return plan->shapedRun.paragraphRTL;
+
+    for (uint32_t code : codes) {
+        if (code >= 0xFB50 && code <= 0xFEFF) {
+            code = (uint32_t)ArabicShaper::ToNominalChar((wchar_t)code);
+        }
+        BidiDirection dir = BidiEngine::GetCharDirection((wchar_t)code);
+        if (dir == BidiDirection::RTL) return true;
+        if (dir == BidiDirection::LTR) return false;
+    }
+    return true;
 }
 
 static bool IsLinePartBroken(void* pLinePart, size_t printableCount) {
@@ -988,7 +1008,6 @@ static bool IsLinePartBroken(void* pLinePart, size_t printableCount) {
 }
 
 static void CollapseTrailingWhitespaceAdvances(
-    void* pLinePart,
     size_t printableCount,
     const std::vector<uint32_t>& codes,
     GlyphPosition* pPosBegin
@@ -1284,7 +1303,7 @@ static std::shared_ptr<FullGlyphRenderPlan> GetOrCreateRenderPlan(void* pLinePar
         SafeReadPointer((char*)pLinePart + 0x60, (void**)&pPosLast) &&
         pPosBegin && pPosLast && (size_t)(pPosLast - pPosBegin) >= printableCount) {
         if (IsLinePartBroken(pLinePart, printableCount)) {
-            CollapseTrailingWhitespaceAdvances(pLinePart, printableCount, codes, pPosBegin);
+            CollapseTrailingWhitespaceAdvances(printableCount, codes, pPosBegin);
         }
         double totalUnkernedPosAdv = 0.0;
         double totalUnkernedHmtxEm = 0.0;
@@ -1536,9 +1555,25 @@ static void DetourLinePartCalculateWidths(void* pThis, int startIndex, int endIn
                             const double gposAdvanceDelta =
                                 ((double)dwriteGlyphs[logIdx].advance - (double)dwriteGlyphs[logIdx].hmtxAdvance) * dwriteToDocScale;
                             pPosBegin[i].advance = (std::max)(0.0, pPosBegin[i].advance + gposAdvanceDelta);
-                            const double purePlacementX =
-                                -((double)dwriteGlyphs[logIdx].offsetX - ((double)dwriteGlyphs[logIdx].advance - (double)dwriteGlyphs[logIdx].hmtxAdvance)) * dwriteToDocScale;
-                            pPosBegin[i].dx = purePlacementX;
+                            bool isRtlChar = true;
+                            if (plan) {
+                                for (const auto& cl : plan->shapedRun.clusters) {
+                                    if (logIdx >= cl.firstChar && logIdx < cl.firstChar + cl.charCount) {
+                                        isRtlChar = cl.isRTL;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                isRtlChar = ArabicShaper::IsArabicChar((wchar_t)codes[i]);
+                            }
+
+                            if (isRtlChar) {
+                                const double purePlacementX =
+                                    -((double)dwriteGlyphs[logIdx].offsetX - ((double)dwriteGlyphs[logIdx].advance - (double)dwriteGlyphs[logIdx].hmtxAdvance)) * dwriteToDocScale;
+                                pPosBegin[i].dx = purePlacementX;
+                            } else {
+                                pPosBegin[i].dx = (double)dwriteGlyphs[logIdx].offsetX * dwriteToDocScale;
+                            }
                             pPosBegin[i].dy = -dwriteGlyphs[logIdx].offsetY * dwriteToDocScale;
                         }
                     }
@@ -1592,7 +1627,7 @@ static void DetourLinePartCalculateWidths(void* pThis, int startIndex, int endIn
                 }
 
                 if (IsLinePartBroken(pThis, printableCount)) {
-                    CollapseTrailingWhitespaceAdvances(pThis, printableCount, codes, pPosBegin);
+                    CollapseTrailingWhitespaceAdvances(printableCount, codes, pPosBegin);
                 }
             }
         } catch (...) {
@@ -1614,9 +1649,9 @@ static PointDbl* DetourLinePartGetBasePosition(void* pThis, PointDbl* outPoint, 
 
         if (InspectLinePart(pThis, &printableCount, &codes, &totalCount) && printableCount > 0) {
             g_CaretInArabic.store(true);
+            bool paragraphRTL = IsRTLParagraphForLinePart(pThis, codes);
+            g_CaretInRTLParagraph.store(paragraphRTL);
             g_LastCaretIndex.store(index);
-            g_LastPrintableCount.store((int)printableCount);
-            g_LastCaretUpdate.store(GetTickCount64());
 
             GlyphPosition* pPosBegin = nullptr;
             GlyphPosition* pPosLast = nullptr;
@@ -1628,7 +1663,7 @@ static PointDbl* DetourLinePartGetBasePosition(void* pThis, PointDbl* outPoint, 
                 if (printableCount > posCount) printableCount = posCount;
 
                 if (IsLinePartBroken(pThis, printableCount)) {
-                    CollapseTrailingWhitespaceAdvances(pThis, printableCount, codes, pPosBegin);
+                    CollapseTrailingWhitespaceAdvances(printableCount, codes, pPosBegin);
                 }
 
                 double originX = 0.0;
@@ -1651,17 +1686,20 @@ static PointDbl* DetourLinePartGetBasePosition(void* pThis, PointDbl* outPoint, 
                 if (k < 0) k = 0;
                 if ((size_t)k > printableCount) k = (int)printableCount;
 
-                double rightW = 0.0;
+                double advanceBefore = 0.0;
                 for (int j = 0; j < k; ++j) {
-                    rightW += pPosBegin[j].advance;
+                    advanceBefore += pPosBegin[j].advance;
                 }
 
-                outPoint->x = originX + totalW - rightW;
+                outPoint->x = paragraphRTL ? (originX + totalW - advanceBefore)
+                                           : (originX + advanceBefore);
                 outPoint->y = originY;
 
                 std::stringstream ss;
-                ss << "GetBasePosition: k=" << index << "/" << printableCount 
-                   << " -> x=" << outPoint->x << " (origX=" << originX << ", totalW=" << totalW << ", rightW=" << rightW << ")";
+                ss << "GetBasePosition: k=" << index << "/" << printableCount
+                   << " -> x=" << outPoint->x << " (dir=" << (paragraphRTL ? "RTL" : "LTR")
+                   << ", origX=" << originX << ", totalW=" << totalW
+                   << ", advanceBefore=" << advanceBefore << ")";
                 Log(ss.str());
 
                 return outPoint;
@@ -1669,7 +1707,6 @@ static PointDbl* DetourLinePartGetBasePosition(void* pThis, PointDbl* outPoint, 
         } else {
             g_CaretInArabic.store(false);
             g_LastCaretIndex.store(-1);
-            g_LastPrintableCount.store(0);
         }
     } catch (...) {
         Log("Exception caught inside DetourLinePartGetBasePosition!");
@@ -1698,9 +1735,9 @@ static RectDbl* DetourLinePartGetHighlightBox(void* pThis, RectDbl* outRect, int
         }
 
         g_CaretInArabic.store(true);
+        bool paragraphRTL = IsRTLParagraphForLinePart(pThis, codes);
+        g_CaretInRTLParagraph.store(paragraphRTL);
         g_LastCaretIndex.store(startIndex);
-        g_LastPrintableCount.store((int)printableCount);
-        g_LastCaretUpdate.store(GetTickCount64());
 
         int s = (std::max)(0, (std::min)(startIndex, (int)printableCount));
         int e = (std::max)(0, (std::min)(endIndex, (int)printableCount));
@@ -1722,7 +1759,7 @@ static RectDbl* DetourLinePartGetHighlightBox(void* pThis, RectDbl* outRect, int
         if (printableCount > posCount) printableCount = posCount;
 
         if (IsLinePartBroken(pThis, printableCount)) {
-            CollapseTrailingWhitespaceAdvances(pThis, printableCount, codes, pPosBegin);
+            CollapseTrailingWhitespaceAdvances(printableCount, codes, pPosBegin);
         }
 
         double originX = 0.0;
@@ -1741,8 +1778,10 @@ static RectDbl* DetourLinePartGetHighlightBox(void* pThis, RectDbl* outRect, int
         for (size_t j = 0; j < printableCount; ++j) {
             double adv = pPosBegin[j].advance;
             if (j >= (size_t)s && j < (size_t)e) {
-                double charLeft = originX + totalW - cumW - adv;
-                double charRight = originX + totalW - cumW;
+                double charLeft = paragraphRTL ? (originX + totalW - cumW - adv)
+                                               : (originX + cumW);
+                double charRight = paragraphRTL ? (originX + totalW - cumW)
+                                                : (originX + cumW + adv);
                 if (charLeft < minSelectedX) minSelectedX = charLeft;
                 if (charRight > maxSelectedX) maxSelectedX = charRight;
                 anySelected = true;
@@ -1785,7 +1824,7 @@ static void DetourSelectionMoveCaret(void* pThis, int moveCaret, bool isSelect, 
     g_LamDeletedBeforeAlefIndex.store(-1);
 
     int effectiveMove = moveCaret;
-    if (g_CaretInArabic.load()) {
+    if (g_CaretInArabic.load() && g_CaretInRTLParagraph.load()) {
         switch (moveCaret) {
         case 1: effectiveMove = 2; break;
         case 2: effectiveMove = 1; break; 
@@ -1872,6 +1911,9 @@ static ComposedPos* DetourHitTestWholeLine(void* pVisitor, void* pNonCountedLine
         size_t totalCount = 0;
         std::vector<uint32_t> codes;
         if (InspectLinePart(res->pLinePart, &printableCount, &codes, &totalCount) && printableCount > 0) {
+            bool paragraphRTL = IsRTLParagraphForLinePart(res->pLinePart, codes);
+            g_CaretInRTLParagraph.store(paragraphRTL);
+
             std::wstring nominalText;
             nominalText.reserve(printableCount);
             for (size_t i = 0; i < printableCount; ++i) {
@@ -1892,7 +1934,7 @@ static ComposedPos* DetourHitTestWholeLine(void* pVisitor, void* pNonCountedLine
             int logicalIdx = res->characterIndex;
             if (gotPoint && pPosBegin && pPosEnd && (size_t)(pPosEnd - pPosBegin) >= printableCount) {
                 if (IsLinePartBroken(res->pLinePart, printableCount)) {
-                    CollapseTrailingWhitespaceAdvances(res->pLinePart, printableCount, codes, pPosBegin);
+                    CollapseTrailingWhitespaceAdvances(printableCount, codes, pPosBegin);
                 }
 
                 double originX = 0.0;
@@ -1904,27 +1946,53 @@ static ComposedPos* DetourHitTestWholeLine(void* pVisitor, void* pNonCountedLine
                 }
 
                 double clickX = clickPt.x;
-                if (clickX >= originX + totalW) {
-                    logicalIdx = 0;
-                } else if (clickX <= originX) {
-                    logicalIdx = (int)printableCount;
-                } else {
-                    double cumW = 0.0;
-                    logicalIdx = (int)printableCount;
-                    for (size_t j = 0; j < printableCount; ++j) {
-                        double adv = pPosBegin[j].advance;
-                        double charRight = originX + totalW - cumW;
-                        double charLeft = charRight - adv;
-                        if (clickX >= charLeft && clickX <= charRight) {
-                            double mid = (charLeft + charRight) * 0.5;
-                            if (clickX >= mid) {
-                                logicalIdx = (int)j;
-                            } else {
-                                logicalIdx = (int)j + 1;
+                if (paragraphRTL) {
+                    if (clickX >= originX + totalW) {
+                        logicalIdx = 0;
+                    } else if (clickX <= originX) {
+                        logicalIdx = (int)printableCount;
+                    } else {
+                        double cumW = 0.0;
+                        logicalIdx = (int)printableCount;
+                        for (size_t j = 0; j < printableCount; ++j) {
+                            double adv = pPosBegin[j].advance;
+                            double charRight = originX + totalW - cumW;
+                            double charLeft = charRight - adv;
+                            if (clickX >= charLeft && clickX <= charRight) {
+                                double mid = (charLeft + charRight) * 0.5;
+                                if (clickX >= mid) {
+                                    logicalIdx = (int)j;
+                                } else {
+                                    logicalIdx = (int)j + 1;
+                                }
+                                break;
                             }
-                            break;
+                            cumW += adv;
                         }
-                        cumW += adv;
+                    }
+                } else {
+                    if (clickX <= originX) {
+                        logicalIdx = 0;
+                    } else if (clickX >= originX + totalW) {
+                        logicalIdx = (int)printableCount;
+                    } else {
+                        double cumW = 0.0;
+                        logicalIdx = (int)printableCount;
+                        for (size_t j = 0; j < printableCount; ++j) {
+                            double adv = pPosBegin[j].advance;
+                            double charLeft = originX + cumW;
+                            double charRight = charLeft + adv;
+                            if (clickX >= charLeft && clickX <= charRight) {
+                                double mid = (charLeft + charRight) * 0.5;
+                                if (clickX <= mid) {
+                                    logicalIdx = (int)j;
+                                } else {
+                                    logicalIdx = (int)j + 1;
+                                }
+                                break;
+                            }
+                            cumW += adv;
+                        }
                     }
                 }
             } else {
@@ -1941,8 +2009,6 @@ static ComposedPos* DetourHitTestWholeLine(void* pVisitor, void* pNonCountedLine
             g_LamDeletedBeforeAlefIndex.store(-1);
             g_CaretInArabic.store(true);
             g_LastCaretIndex.store(logicalIdx);
-            g_LastPrintableCount.store((int)printableCount);
-            g_LastCaretUpdate.store(GetTickCount64());
         }
     } catch (...) {
         Log("Exception caught inside DetourHitTestWholeLine!");
@@ -2000,6 +2066,322 @@ static void* DetourOpenTypeRulesGetAvailableFeatures(
     }
 
     return ret;
+}
+
+typedef void (*FnFontResolverVisitRun)(
+    void* pThis,
+    void* pNonCountedLinePart,
+    int startIndex,
+    int endIndex,
+    void* pConsolidatedGlyphAtts
+);
+static FnFontResolverVisitRun g_OriginalFontResolverVisitRun = nullptr;
+
+typedef int (*FnFontResolverGetResolution)(
+    void* pThis,
+    const void* pFont,
+    uint32_t charCode
+);
+static FnFontResolverGetResolution g_OriginalFontResolverGetResolution = nullptr;
+
+static thread_local bool t_InVisitRun = false;
+static thread_local bool t_VisitRunHasArabic = false;
+static thread_local bool t_PrevResolvedArabic = false;
+static thread_local std::vector<uint32_t> t_VisitRunCodes;
+
+static bool IsNeutralCharForArabic(uint32_t c) {
+    // Whitespace
+    if (c == 0x0020 || c == 0x00A0 || (c >= 0x2000 && c <= 0x200B) || c == 0x202F || c == 0x205F || c == 0x3000) {
+        return true;
+    }
+    // Neutral punctuation & symbols (ASCII & Unicode)
+    if (c == ',' || c == '.' || c == ':' || c == ';' || c == '!' || c == '?' ||
+        c == '-' || c == 0x2010 || c == 0x2011 || c == 0x2012 || c == 0x2013 || c == 0x2014 || c == 0x2015 ||
+        c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' ||
+        c == 0x22 || c == 0x27 || c == 0x2018 || c == 0x2019 || c == 0x201C || c == 0x201D ||
+        c == 0x00AB || c == 0x00BB || c == '/' || c == 0x5C || c == '_' || c == '|' ||
+        c == '@' || c == '#' || c == '$' || c == '%' || c == '^' || c == '&' || c == '*' ||
+        c == '+' || c == '=' || c == '<' || c == '>' || c == '~') {
+        return true;
+    }
+    // ASCII digits
+    if (c >= '0' && c <= '9') {
+        return true;
+    }
+    // Arabic punctuation and digits
+    if (c == 0x060C || c == 0x061B || c == 0x061F || c == 0x066A || c == 0x066B || c == 0x066C ||
+        (c >= 0x0660 && c <= 0x0669) || (c >= 0x06F0 && c <= 0x06F9)) {
+        return true;
+    }
+    return false;
+}
+
+static bool IsInArabicContext(const std::vector<uint32_t>& codes, uint32_t charCode) {
+    if (codes.empty()) return true;
+    bool anyArabic = false;
+    for (uint32_t c : codes) {
+        if (c >= 0x0600 && c <= 0x06FF && !IsNeutralCharForArabic(c)) {
+            anyArabic = true;
+            break;
+        }
+    }
+    if (!anyArabic) return false;
+
+    for (size_t i = 0; i < codes.size(); ++i) {
+        if (codes[i] == charCode) {
+            int prevNonNeutral = -1;
+            for (int k = (int)i - 1; k >= 0; --k) {
+                if (!IsNeutralCharForArabic(codes[k])) {
+                    prevNonNeutral = k;
+                    break;
+                }
+            }
+            int nextNonNeutral = -1;
+            for (size_t k = i + 1; k < codes.size(); ++k) {
+                if (!IsNeutralCharForArabic(codes[k])) {
+                    nextNonNeutral = (int)k;
+                    break;
+                }
+            }
+            bool prevArabic = (prevNonNeutral >= 0 && ArabicShaper::IsArabicChar((wchar_t)codes[prevNonNeutral]));
+            bool nextArabic = (nextNonNeutral >= 0 && ArabicShaper::IsArabicChar((wchar_t)codes[nextNonNeutral]));
+            if (prevArabic || nextArabic) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void DetourFontResolverVisitRun(
+    void* pThis,
+    void* pNonCountedLinePart,
+    int startIndex,
+    int endIndex,
+    void* pConsolidatedGlyphAtts
+) {
+    if (!g_OriginalFontResolverVisitRun) return;
+
+    void* pLinePart = nullptr;
+    if (IsValidUserPointer(pNonCountedLinePart)) {
+        SafeReadPointer(pNonCountedLinePart, &pLinePart);
+    }
+
+    bool hasArabic = false;
+    size_t printableCount = 0;
+    std::vector<uint32_t> codes;
+    if (pLinePart && InspectLinePart(pLinePart, &printableCount, &codes) && printableCount > 0) {
+        hasArabic = true;
+    } else if (pLinePart) {
+        void* pBegin = nullptr;
+        void* pEnd = nullptr;
+        if (SafeReadPointer((char*)pLinePart + 0x18, (void**)&pBegin) &&
+            SafeReadPointer((char*)pLinePart + 0x20, (void**)&pEnd) &&
+            pBegin && pEnd && pEnd > pBegin) {
+            size_t count = (size_t)((char*)pEnd - (char*)pBegin) / sizeof(void*);
+            if (count > 0 && count < 20000) {
+                codes.reserve(count);
+                for (size_t i = 0; i < count; ++i) {
+                    void* glyph = nullptr;
+                    if (SafeReadPointer((char*)pBegin + i * sizeof(void*), &glyph) && IsValidUserPointer(glyph)) {
+                        uint32_t c = 0;
+                        if (SafeReadUInt32((char*)glyph + 0x38, &c)) {
+                            if (c >= 0xFB50 && c <= 0xFEFF) {
+                                c = (uint32_t)ArabicShaper::ToNominalChar((wchar_t)c);
+                            }
+                            codes.push_back(c);
+                            if (ArabicShaper::IsArabicChar((wchar_t)c)) {
+                                hasArabic = true;
+                            }
+                        } else {
+                            codes.push_back(0);
+                        }
+                    } else {
+                        codes.push_back(0);
+                    }
+                }
+            }
+        }
+    }
+
+    bool prevInVisitRun = t_InVisitRun;
+    bool prevHasArabic = t_VisitRunHasArabic;
+    bool prevResolvedArabic = t_PrevResolvedArabic;
+    std::vector<uint32_t> prevCodes = std::move(t_VisitRunCodes);
+
+    t_InVisitRun = true;
+    t_VisitRunHasArabic = hasArabic;
+    t_VisitRunCodes = codes;
+    t_PrevResolvedArabic = hasArabic;
+
+    try {
+        g_OriginalFontResolverVisitRun(pThis, pNonCountedLinePart, startIndex, endIndex, pConsolidatedGlyphAtts);
+    } catch (...) {
+        Log("Exception caught inside DetourFontResolverVisitRun!");
+    }
+
+    t_InVisitRun = prevInVisitRun;
+    t_VisitRunHasArabic = prevHasArabic;
+    t_PrevResolvedArabic = prevResolvedArabic;
+    t_VisitRunCodes = std::move(prevCodes);
+}
+
+typedef void* (__fastcall *FnFontResolverResolve)(
+    void* pOutConsolidated,
+    void* pThis,
+    void* pInConsolidated1,
+    void* pInConsolidated2,
+    void* pNonCountedGlyph
+);
+static FnFontResolverResolve g_OriginalFontResolverResolve = nullptr;
+
+static thread_local bool t_InResolve = false;
+
+static bool FontAttsSupportArabic(void* pThis, void* pInConsolidated1) {
+    if (!pInConsolidated1) return true;
+    void* pGlyphAtts = nullptr;
+    if (!SafeReadPointer(pInConsolidated1, &pGlyphAtts) || !IsValidUserPointer(pGlyphAtts)) return true;
+
+    void* pFontMetrics = nullptr;
+    if (SafeReadPointer((char*)pGlyphAtts + 0x1F0, &pFontMetrics) && IsValidUserPointer(pFontMetrics)) {
+        if (g_GetGlyphIndex) {
+            int gid = g_GetGlyphIndex(pFontMetrics, 0x0627);
+            if (gid > 0 && gid < 0xFFFF) {
+                return true;
+            }
+            return false;
+        }
+    }
+
+    void* pFont = (char*)pGlyphAtts + 0x130;
+    if (g_OriginalFontResolverGetResolution && pThis) {
+        int res = g_OriginalFontResolverGetResolution(pThis, pFont, 0x0627);
+        return (res == 0);
+    }
+
+    return true;
+}
+
+static void* __fastcall DetourFontResolverResolve(
+    void* pOutConsolidated,
+    void* pThis,
+    void* pInConsolidated1,
+    void* pInConsolidated2,
+    void* pNonCountedGlyph
+) {
+    if (!g_OriginalFontResolverResolve) return pOutConsolidated;
+
+    if (t_InResolve) {
+        return g_OriginalFontResolverResolve(
+            pOutConsolidated, pThis, pInConsolidated1, pInConsolidated2, pNonCountedGlyph);
+    }
+
+    void* pGlyph = nullptr;
+    if (IsValidUserPointer(pNonCountedGlyph)) {
+        SafeReadPointer(pNonCountedGlyph, &pGlyph);
+    }
+
+    uint32_t charCode = 0;
+    if (IsValidUserPointer(pGlyph)) {
+        SafeReadUInt32((char*)pGlyph + 0x38, &charCode);
+    }
+
+    bool isArabic = (charCode >= 0x0600 && charCode <= 0x06FF) ||
+                    (charCode >= 0x0750 && charCode <= 0x077F) ||
+                    (charCode >= 0x08A0 && charCode <= 0x08FF) ||
+                    (charCode >= 0xFB50 && charCode <= 0xFEFF);
+
+    bool isNeutral = IsNeutralCharForArabic(charCode);
+
+    bool baseSupportsArabic = true;
+    if ((isArabic || isNeutral) && pThis && pInConsolidated1) {
+        baseSupportsArabic = FontAttsSupportArabic(pThis, pInConsolidated1);
+    }
+
+    bool substituteArabic = false;
+    if (isArabic && IsValidUserPointer(pGlyph) && !baseSupportsArabic) {
+        substituteArabic = true;
+    } else if (isNeutral && IsValidUserPointer(pGlyph)) {
+        bool inContext = false;
+        if (t_InVisitRun && t_VisitRunHasArabic && IsInArabicContext(t_VisitRunCodes, charCode)) {
+            inContext = true;
+        } else if (t_PrevResolvedArabic) {
+            inContext = true;
+        }
+
+        if (inContext && !baseSupportsArabic) {
+            substituteArabic = true;
+        }
+    }
+
+    if (isArabic) {
+        t_PrevResolvedArabic = true;
+    } else if (!isNeutral) {
+        t_PrevResolvedArabic = false;
+    }
+
+    if (substituteArabic) {
+        struct CharCodeGuard {
+            uint32_t* ptr;
+            uint32_t orig;
+            ~CharCodeGuard() {
+                if (ptr) *ptr = orig;
+            }
+        } guard{ (uint32_t*)((char*)pGlyph + 0x38), charCode };
+
+        *(uint32_t*)((char*)pGlyph + 0x38) = 0x0627;
+
+        t_InResolve = true;
+        void* ret = g_OriginalFontResolverResolve(
+            pOutConsolidated, pThis, pInConsolidated1, pInConsolidated2, pNonCountedGlyph);
+        t_InResolve = false;
+
+        return ret;
+    }
+
+    t_InResolve = true;
+    void* ret = g_OriginalFontResolverResolve(
+        pOutConsolidated, pThis, pInConsolidated1, pInConsolidated2, pNonCountedGlyph);
+    t_InResolve = false;
+
+    return ret;
+}
+
+static thread_local bool t_InGetResolution = false;
+
+static int DetourFontResolverGetResolution(
+    void* pThis,
+    const void* pFont,
+    uint32_t charCode
+) {
+    if (!g_OriginalFontResolverGetResolution) return 1;
+
+    if (t_InGetResolution) {
+        return g_OriginalFontResolverGetResolution(pThis, pFont, charCode);
+    }
+
+    int res = g_OriginalFontResolverGetResolution(pThis, pFont, charCode);
+    if (res != 0) {
+        return res;
+    }
+
+    if (IsNeutralCharForArabic(charCode) && IsValidUserPointer(pFont)) {
+        bool inArabicContext = t_PrevResolvedArabic;
+        if (!inArabicContext && t_InVisitRun && t_VisitRunHasArabic) {
+            inArabicContext = IsInArabicContext(t_VisitRunCodes, charCode);
+        }
+        if (inArabicContext) {
+            t_InGetResolution = true;
+            int arabicRes = g_OriginalFontResolverGetResolution(pThis, pFont, 0x0627);
+            t_InGetResolution = false;
+
+            if (arabicRes != 0) {
+                return 1;
+            }
+        }
+    }
+
+    return res;
 }
 extern "C" {
 
@@ -2246,7 +2628,49 @@ bool AffinityHookManager::InstallHooks() {
     );
     Log(std::string("Hook Story::OpenTypeRules::GetAvailableFeatures: ") + (b12 ? "SUCCESS" : "FAILED"));
 
-    bool allSuccess = b1 && b2 && b3 && b4 && b5 && b6 && b7 && b8 && b9 && b11 && b12;
+    void* targetVisitRun = PatternScanner::ResolveFunction(
+        hStory,
+        "?VisitRun@FontResolver@Story@@QEAAXV?$NonCounted@VLinePart@Story@@@Kernel@@HHV?$Consolidated@VGlyphAtts@Story@@@4@@Z",
+        nullptr,
+        0xC72070
+    );
+    bool b13 = HookEngine::Instance().CreateHook(
+        targetVisitRun,
+        (void*)DetourFontResolverVisitRun,
+        (void**)&g_OriginalFontResolverVisitRun,
+        0
+    );
+    Log(std::string("Hook Story::FontResolver::VisitRun: ") + (b13 ? "SUCCESS" : "FAILED"));
+
+    void* targetGetResolution = PatternScanner::ResolveFunction(
+        hStory,
+        "?GetResolution@FontResolver@Story@@QEAA?AW4FontResolution@2@AEBVFont@Kernel@@I@Z",
+        nullptr,
+        0xC6FA30
+    );
+    bool b14 = HookEngine::Instance().CreateHook(
+        targetGetResolution,
+        (void*)DetourFontResolverGetResolution,
+        (void**)&g_OriginalFontResolverGetResolution,
+        0
+    );
+    Log(std::string("Hook Story::FontResolver::GetResolution: ") + (b14 ? "SUCCESS" : "FAILED"));
+
+    void* targetResolve = PatternScanner::ResolveFunction(
+        hStory,
+        "?Resolve@FontResolver@Story@@AEAA?AV?$Consolidated@VGlyphAtts@Story@@@Kernel@@V34@0V?$NonCounted@$$CBVGlyph@Story@@@4@@Z",
+        nullptr,
+        0xC6FD20
+    );
+    bool b15 = HookEngine::Instance().CreateHook(
+        targetResolve,
+        (void*)DetourFontResolverResolve,
+        (void**)&g_OriginalFontResolverResolve,
+        0
+    );
+    Log(std::string("Hook Story::FontResolver::Resolve: ") + (b15 ? "SUCCESS" : "FAILED"));
+
+    bool allSuccess = b1 && b2 && b3 && b4 && b5 && b6 && b7 && b8 && b9 && b11 && b12 && b13 && b14 && b15;
     Log(std::string("All native Arabic hooks installed: ") + (allSuccess ? "SUCCESS" : "PARTIAL/FAILED"));
 
     return allSuccess;

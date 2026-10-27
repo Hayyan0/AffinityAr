@@ -13,10 +13,6 @@ HookEngine::~HookEngine() {
     UnhookAll();
 }
 
-bool HookEngine::Initialize() {
-    return true;
-}
-
 bool HookEngine::CreateHook(void* target, void* detour, void** original, size_t patchSize) {
     if (!target || !detour) return false;
 
@@ -26,7 +22,6 @@ bool HookEngine::CreateHook(void* target, void* detour, void** original, size_t 
 
     if (patchSize < 14 || patchSize > 32) return false;
 
-    // Guard: Prevent double-hooking if function already has a 14-byte indirect jump
     const uint8_t* pTarget = (const uint8_t*)target;
     if (pTarget[0] == 0xFF && pTarget[1] == 0x25 && pTarget[2] == 0x00 && pTarget[3] == 0x00 && pTarget[4] == 0x00 && pTarget[5] == 0x00) {
         return false;
@@ -46,14 +41,10 @@ bool HookEngine::CreateHook(void* target, void* detour, void** original, size_t 
     entry.patchSize = patchSize;
     entry.trampoline = trampoline;
 
-    // Save original bytes
     memcpy(entry.originalBytes, target, patchSize);
 
-    // Build trampoline:
-    // 1. Copy original instructions
     memcpy(trampoline, target, patchSize);
 
-    // 2. Jump back to target + patchSize
     uint8_t* pTramp = (uint8_t*)trampoline + patchSize;
     pTramp[0] = 0xFF;
     pTramp[1] = 0x25;
@@ -82,7 +73,6 @@ bool HookEngine::EnableHook(void* target) {
                 return false;
             }
 
-            // Write 14-byte indirect jump: FF 25 00 00 00 00 <64-bit address>
             uint8_t* p = (uint8_t*)target;
             p[0] = 0xFF;
             p[1] = 0x25;
@@ -93,7 +83,6 @@ bool HookEngine::EnableHook(void* target) {
             uintptr_t detourAddr = (uintptr_t)h.detour;
             memcpy(p + 6, &detourAddr, sizeof(uintptr_t));
 
-            // Pad remaining bytes with NOP
             for (size_t i = 14; i < h.patchSize; ++i) {
                 p[i] = 0x90;
             }

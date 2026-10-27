@@ -68,7 +68,6 @@ function broadcastReload() {
 let reloadTimeout = null;
 fs.watch(__dirname, { recursive: true }, (eventType, filename) => {
   if (!filename) return;
-  // Ignore git or hidden files
   if (filename.startsWith('.') || filename.includes('original')) return;
   
   clearTimeout(reloadTimeout);
@@ -103,7 +102,8 @@ const server = http.createServer((req, res) => {
 
   let filePath = path.join(__dirname, pathname);
 
-  if (!filePath.startsWith(__dirname)) {
+  const relative = path.relative(__dirname, filePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return;
@@ -129,6 +129,10 @@ const server = http.createServer((req, res) => {
 
     if (ext === '.html') {
       let html = data.toString('utf-8');
+      html = html.replace(
+        /<base href="https:\/\/hayyan0\.github\.io\/AffinityAr\/">/,
+        '<base href="/">'
+      );
       if (html.includes('</body>')) {
         html = html.replace('</body>', `${LIVE_RELOAD_SNIPPET}\n</body>`);
       } else {

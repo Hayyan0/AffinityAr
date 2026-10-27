@@ -2,10 +2,9 @@
 setlocal enabledelayedexpansion
 
 echo ========================================================
-echo Building Affinity Arabic Hook and Standalone Test Runner
+echo Building Affinity Arabic Hook and Standalone Tools
 echo ========================================================
 
-:: Determine project root directory relative to this script
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
 set "SRC_DIR=%ROOT_DIR%\src"
@@ -13,7 +12,22 @@ set "BIN_DIR=%ROOT_DIR%\bin"
 set "RES_DIR=%ROOT_DIR%\resources"
 set "TESTS_DIR=%ROOT_DIR%\tests"
 
-:: 1. Check if complete MSVC environment (cl.exe, rc.exe, and INCLUDE) is already set up
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%verify_version.ps1"
+if %ERRORLEVEL% neq 0 (
+    echo Error: version metadata is inconsistent.
+    exit /b 1
+)
+
+set "APP_VERSION="
+for /f "usebackq delims=" %%v in ("%ROOT_DIR%\version.txt") do (
+    if not defined APP_VERSION set "APP_VERSION=%%v"
+)
+for /f "tokens=1,2,3 delims=." %%a in ("!APP_VERSION!") do set "APP_VERSION_COMMA=%%a,%%b,%%c,0"
+if not defined APP_VERSION_COMMA (
+    echo Error: version.txt must contain a three-part numeric version.
+    exit /b 1
+)
+
 if defined INCLUDE (
     where cl.exe >nul 2>&1
     if !ERRORLEVEL! equ 0 (
@@ -25,7 +39,6 @@ if defined INCLUDE (
     )
 )
 
-:: 2. Try vswhere.exe (official MSVC installer query)
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "%VSWHERE%" (
     for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
@@ -36,7 +49,6 @@ if exist "%VSWHERE%" (
     )
 )
 
-:: 3. Check standard Visual Studio installation directories
 for %%V in (18 17 2022 2019) do (
     for %%E in (Community Professional Enterprise BuildTools) do (
         if exist "%ProgramFiles%\Microsoft Visual Studio\%%V\%%E\VC\Auxiliary\Build\vcvars64.bat" (
@@ -64,16 +76,30 @@ if %ERRORLEVEL% neq 0 (
 :msvc_ready
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 
+> "%BIN_DIR%\version_generated.h" echo #define APP_VERSION_COMMA !APP_VERSION_COMMA!
+>>"%BIN_DIR%\version_generated.h" echo #define APP_VERSION_STR "!APP_VERSION!.0"
+
 pushd "%BIN_DIR%"
 
 del /q *.old 2>nul
 if exist "affinity_arabic.dll" move /y "affinity_arabic.dll" "affinity_arabic.dll.old" >nul 2>&1
-if exist "version.dll" move /y "version.dll" "version.dll.old" >nul 2>&1
 if exist "AffinityArabic.exe" move /y "AffinityArabic.exe" "AffinityArabic.exe.old" >nul 2>&1
+if exist "libstacktrace.dll" move /y "libstacktrace.dll" "libstacktrace.dll.old" >nul 2>&1
+del /q "version.dll" "version.dll.old" 2>nul
 
 echo Compiling resources...
-rc.exe /nologo /i"%RES_DIR%" /fo"version_info.res" "%RES_DIR%\version.rc"
-rc.exe /nologo /i"%RES_DIR%" /fo"launcher.res" "%RES_DIR%\launcher.rc"
+rc.exe /nologo /i"%BIN_DIR%" /i"%RES_DIR%" /fo"version_info.res" "%RES_DIR%\version.rc"
+if %ERRORLEVEL% neq 0 (
+    echo Build failed for version_info.res!
+    popd
+    exit /b 1
+)
+rc.exe /nologo /i"%BIN_DIR%" /i"%RES_DIR%" /fo"launcher.res" "%RES_DIR%\launcher.rc"
+if %ERRORLEVEL% neq 0 (
+    echo Build failed for launcher.res!
+    popd
+    exit /b 1
+)
 
 echo Compiling affinity_arabic.dll (Hook DLL)...
 cl.exe /nologo /O2 /MD /std:c++17 /EHsc /utf-8 ^
@@ -126,23 +152,13 @@ cl.exe /nologo /O2 /MD /std:c++17 /EHsc /utf-8 ^
     /I"%SRC_DIR%" ^
     "%SRC_DIR%\launcher\launcher.cpp" ^
     launcher.res ^
-    /link /OUT:"AffinityArabic.exe" /SUBSYSTEM:WINDOWS user32.lib kernel32.lib shell32.lib comctl32.lib
+    /link /OUT:"AffinityArabic.exe" /SUBSYSTEM:WINDOWS user32.lib kernel32.lib shell32.lib comctl32.lib advapi32.lib
 
-echo.
-echo Compiling version.dll (Seamless Proxy DLL)...
-cl.exe /nologo /O2 /MD /std:c++17 /EHsc /utf-8 ^
-    /I"%SRC_DIR%" ^
-    /LD "%SRC_DIR%\proxy\version_proxy.cpp" ^
-        "%SRC_DIR%\shaping\arabic_shaper.cpp" ^
-        "%SRC_DIR%\shaping\dwrite_shaper.cpp" ^
-        "%SRC_DIR%\bidi\bidi_engine.cpp" ^
-        "%SRC_DIR%\core\hde\hde64.c" ^
-        "%SRC_DIR%\core\pattern_scanner.cpp" ^
-        "%SRC_DIR%\core\hook_engine.cpp" ^
-        "%SRC_DIR%\core\credit_manager.cpp" ^
-        "%SRC_DIR%\core\affinity_arabic_hook.cpp" ^
-        version_info.res ^
-    /link /OUT:"version.dll" /DEF:"%SRC_DIR%\proxy\version.def" user32.lib kernel32.lib dwrite.lib comctl32.lib shell32.lib
+if %ERRORLEVEL% neq 0 (
+    echo Build failed for AffinityArabic.exe!
+    popd
+    exit /b 1
+)
 
 echo.
 echo Compiling libstacktrace.dll (Seamless App Proxy DLL)...
@@ -166,6 +182,10 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+if not exist "affinity_arabic.dll" goto :missing_output
+if not exist "AffinityArabic.exe" goto :missing_output
+if not exist "libstacktrace.dll" goto :missing_output
+
 del /q *.obj *.exp *.lib *.old *.res 2>nul
 popd
 
@@ -173,9 +193,13 @@ echo.
 echo ========================================================
 echo Build Successful!
 echo Hook DLL: %BIN_DIR%\affinity_arabic.dll
-echo Proxy DLL: %BIN_DIR%\version.dll
 echo Seamless DLL: %BIN_DIR%\libstacktrace.dll
 if exist "%BIN_DIR%\test_runner.exe" echo Test Runner: %BIN_DIR%\test_runner.exe
 echo Launcher: %BIN_DIR%\AffinityArabic.exe
 echo ========================================================
 exit /b 0
+
+:missing_output
+echo Error: one or more build outputs are missing.
+popd
+exit /b 1

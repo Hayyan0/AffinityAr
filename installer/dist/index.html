@@ -49,7 +49,17 @@
           </div>
 
           <div class="view-body">
-            <div class="card app-summary-card">
+            <!-- Multi-version Selection Section on Step 1 (when multiple installations detected) -->
+            <div class="version-select-section" id="s1-multi-version-section" style="display: none; margin-bottom: 14px;">
+              <div class="section-label-row">
+                <span class="label-ar">تم اكتشاف أكثر من نسخة مثبتة — اختر النسخة المراد تعريبها:</span>
+                <span class="label-en">MULTIPLE EDITIONS DETECTED — SELECT TARGET</span>
+              </div>
+              <div class="version-cards-list" id="s1-version-cards-list"></div>
+            </div>
+
+            <!-- Single App detected card (when only 1 version detected) -->
+            <div class="card app-summary-card" id="s1-single-app-card">
               <div class="app-summary-right">
                 <div class="app-avatar-box">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -134,7 +144,16 @@
           </div>
 
           <div class="view-body">
-            <div class="card app-summary-card">
+            <!-- Version Selection Section (when multiple installations detected) placed prominently at the top -->
+            <div class="version-select-section" id="version-select-section" style="display: none; margin-bottom: 14px;">
+              <div class="section-label-row">
+                <span class="label-ar">اختر النسخة المراد تثبيت التعريب لها:</span>
+                <span class="label-en">SELECT INSTALLED EDITION</span>
+              </div>
+              <div class="version-cards-list" id="version-cards-list"></div>
+            </div>
+
+            <div class="card app-summary-card" id="s2-summary-card">
               <div class="app-summary-right">
                 <div class="app-avatar-box">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -154,7 +173,7 @@
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
                   </svg>
-                  <span>عُثر عليه</span>
+                  <span id="s2-detected-badge-text">عُثر عليه</span>
                 </span>
               </div>
             </div>
@@ -215,7 +234,7 @@
           </div>
 
           <footer class="view-footer">
-            <button class="btn btn-primary" id="btn-to-step3">
+            <button class="btn btn-primary" id="btn-to-step3" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
@@ -252,21 +271,21 @@
                   </div>
                 </div>
                 <h3 class="mode-card-title">مشغّل مستقل</h3>
-                <span class="mode-card-subtitle">مُشغل منفصل</span>
-                <p class="mode-card-desc">تشغيل البرنامج عبر اختصار مستقل AffinityArabic.exe.</p>
+                <span class="mode-card-subtitle" id="mode-card-launcher-subtitle">مُشغل منفصل</span>
+                <p class="mode-card-desc" id="mode-card-launcher-desc">تشغيل البرنامج عبر اختصار مستقل AffinityArabic.exe.</p>
 
                 <div class="mode-card-checklist">
                   <div class="mode-check-item">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>إنشاء اختصار مباشر على سطح المكتب</span>
+                    <span id="mode-card-launcher-check1">إنشاء اختصار مباشر على سطح المكتب</span>
                   </div>
                   <div class="mode-check-item">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>عدم تعديل أي ملف في التثبيت الأصلي</span>
+                    <span id="mode-card-launcher-check2">لا يستبدل أي ملف أصلي في مجلد Affinity</span>
                   </div>
                 </div>
               </div>
@@ -283,21 +302,21 @@
                   </div>
                 </div>
                 <h3 class="mode-card-title">دمج تلقائي مع التطبيق</h3>
-                <span class="mode-card-subtitle tag-selected">موصى به</span>
-                <p class="mode-card-desc">تفعيل التعريب مباشرة عند فتح Affinity من أي اختصار أو مستند وبشكل سلس وتلقائي.</p>
+                <span class="mode-card-subtitle tag-selected" id="mode-card-embedded-subtitle">موصى به</span>
+                <p class="mode-card-desc" id="mode-card-embedded-desc">تفعيل التعريب مباشرة عند فتح Affinity من أي اختصار أو مستند وبشكل سلس وتلقائي.</p>
 
                 <div class="mode-card-checklist">
                   <div class="mode-check-item highlight">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>يعمل تلقائيًا مع كافة اختصارات وملفات البرنامج</span>
+                    <span id="mode-card-embedded-check1">يعمل تلقائيًا مع كافة اختصارات وملفات البرنامج</span>
                   </div>
                   <div class="mode-check-item highlight">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7F175" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>حفظ نسخة احتياطية للملفات الأصلية تلقائيًا</span>
+                    <span id="mode-card-embedded-check2">حفظ نسخة احتياطية للملفات الأصلية تلقائيًا</span>
                   </div>
                 </div>
               </div>
@@ -314,7 +333,7 @@
           </div>
 
           <footer class="view-footer">
-            <button class="btn btn-primary" id="btn-start-install">
+            <button class="btn btn-primary" id="btn-start-install" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
@@ -570,7 +589,7 @@
       </nav>
 
       <div class="sidebar-footer">
-        <span class="footer-patch-ver" id="sidebar-footer-text">AFFINITY ARABIC • v1.0.0</span>
+        <span class="footer-patch-ver" id="sidebar-footer-text">AFFINITY ARABIC</span>
         <button type="button" class="footer-author-link" id="btn-author-twitter" title="زيارة حساب المطور على منصة X (تويتر)">
           <svg class="author-x-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
             <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>

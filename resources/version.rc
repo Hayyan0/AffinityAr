@@ -1,9 +1,10 @@
 #include <windows.h>
+#include "version_generated.h"
 
-#define VER_FILEVERSION             2,0,0,0
-#define VER_FILEVERSION_STR         "2.0.0.0\0"
-#define VER_PRODUCTVERSION          2,0,0,0
-#define VER_PRODUCTVERSION_STR       "2.0.0.0\0"
+#define VER_FILEVERSION             APP_VERSION_COMMA
+#define VER_FILEVERSION_STR         APP_VERSION_STR
+#define VER_PRODUCTVERSION          APP_VERSION_COMMA
+#define VER_PRODUCTVERSION_STR      APP_VERSION_STR
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     VER_FILEVERSION

@@ -18,7 +18,6 @@ class HookEngine {
 public:
     static HookEngine& Instance();
 
-    bool Initialize();
     bool CreateHook(void* target, void* detour, void** original, size_t patchSize = 0);
     bool EnableHook(void* target);
     bool DisableHook(void* target);

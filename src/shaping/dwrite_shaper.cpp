@@ -1,7 +1,9 @@
 #include "dwrite_shaper.h"
 #include "arabic_shaper.h"
+#include "../bidi/bidi_engine.h"
 #include <iostream>
 #include <algorithm>
+#include <utility>
 
 #pragma comment(lib, "dwrite.lib")
 
@@ -10,8 +12,23 @@ namespace AffinityArabic {
 class TextAnalysisSource : public IDWriteTextAnalysisSource {
     std::wstring m_text;
     LONG m_refCount;
+    bool m_isRTL = false;
 public:
-    TextAnalysisSource(const std::wstring& text) : m_text(text), m_refCount(1) {}
+    TextAnalysisSource(const std::wstring& text) : m_text(text), m_refCount(1) {
+        for (wchar_t c : m_text) {
+            BidiDirection d = BidiEngine::GetCharDirection(c);
+            if (d == BidiDirection::RTL) {
+                m_isRTL = true;
+                break;
+            }
+            if (d == BidiDirection::LTR) {
+                m_isRTL = false;
+                break;
+            }
+        }
+    }
+
+    bool IsRTL() const { return m_isRTL; }
 
     IFACEMETHOD(QueryInterface)(REFIID riid, void** ppv) override {
         if (riid == __uuidof(IDWriteTextAnalysisSource) || riid == __uuidof(IUnknown)) {
@@ -47,11 +64,12 @@ public:
     }
 
     IFACEMETHOD_(DWRITE_READING_DIRECTION, GetParagraphReadingDirection)() override {
-        return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
+        return m_isRTL ? DWRITE_READING_DIRECTION_RIGHT_TO_LEFT
+                       : DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
     }
 
     IFACEMETHOD(GetLocaleName)(UINT32 textPosition, UINT32* textLength, const WCHAR** localeName) override {
-        *localeName = L"ar-SA";
+        *localeName = m_isRTL ? L"ar-SA" : L"en-US";
         *textLength = (UINT32)(m_text.size() - textPosition);
         return S_OK;
     }
@@ -113,11 +131,12 @@ struct UnifiedRun {
 static std::vector<UnifiedRun> BuildUnifiedRuns(
     UINT32 totalLen,
     const std::vector<ScriptRunItem>& scriptRuns,
-    const std::vector<BidiRunItem>& bidiRuns
+    const std::vector<BidiRunItem>& bidiRuns,
+    UINT8 defaultLevel
 ) {
     if (totalLen == 0) return {};
     std::vector<DWRITE_SCRIPT_ANALYSIS> charScript(totalLen);
-    std::vector<UINT8> charBidi(totalLen, 1); 
+    std::vector<UINT8> charBidi(totalLen, defaultLevel);
 
     for (const auto& sr : scriptRuns) {
         for (UINT32 i = 0; i < sr.textLength && (sr.textPosition + i) < totalLen; ++i) {
@@ -153,6 +172,101 @@ static std::vector<UnifiedRun> BuildUnifiedRuns(
         }
     }
     return runs;
+}
+
+std::vector<size_t> DWriteShaper::GetVisualClusterOrder(const ShapedTextRun& shapedRun) {
+    if (shapedRun.clusters.empty()) return {};
+
+    size_t runCount = shapedRun.runs.size();
+    if (runCount == 0) {
+        std::vector<std::pair<size_t, size_t>> groups;
+        for (size_t i = 0; i < shapedRun.clusters.size(); ++i) {
+            bool isRTL = shapedRun.clusters[i].isRTL;
+            if (groups.empty() || shapedRun.clusters[groups.back().first].isRTL != isRTL) {
+                groups.push_back({ i, i + 1 });
+            } else {
+                groups.back().second = i + 1;
+            }
+        }
+
+        std::vector<size_t> order;
+        order.reserve(shapedRun.clusters.size());
+        auto appendGroup = [&](const std::pair<size_t, size_t>& group) {
+            if (shapedRun.clusters[group.first].isRTL) {
+                for (size_t i = group.second; i > group.first; --i) {
+                    order.push_back(i - 1);
+                }
+            } else {
+                for (size_t i = group.first; i < group.second; ++i) {
+                    order.push_back(i);
+                }
+            }
+        };
+        if (shapedRun.paragraphRTL) {
+            for (auto git = groups.rbegin(); git != groups.rend(); ++git) appendGroup(*git);
+        } else {
+            for (const auto& group : groups) appendGroup(group);
+        }
+        return order;
+    }
+
+    std::vector<std::vector<size_t>> clustersByRun(runCount);
+    for (size_t ci = 0; ci < shapedRun.clusters.size(); ++ci) {
+        size_t ri = shapedRun.clusters[ci].runIndex;
+        if (ri < runCount) {
+            clustersByRun[ri].push_back(ci);
+        }
+    }
+
+    std::vector<size_t> visualRunOrder(runCount);
+    for (size_t i = 0; i < runCount; ++i) visualRunOrder[i] = i;
+
+    uint8_t maxLevel = 0;
+    uint8_t minLevel = 255;
+    for (size_t ri = 0; ri < runCount; ++ri) {
+        if (shapedRun.runs[ri].bidiLevel > maxLevel) maxLevel = shapedRun.runs[ri].bidiLevel;
+        if (shapedRun.runs[ri].bidiLevel < minLevel) minLevel = shapedRun.runs[ri].bidiLevel;
+    }
+
+    uint8_t lowestOdd = minLevel;
+    if ((lowestOdd & 1) == 0 && lowestOdd > 0) lowestOdd--;
+    if ((lowestOdd & 1) == 0) lowestOdd = 1;
+
+    for (int lvl = maxLevel; lvl >= (int)lowestOdd; --lvl) {
+        size_t i = 0;
+        while (i < visualRunOrder.size()) {
+            if (shapedRun.runs[visualRunOrder[i]].bidiLevel >= (uint8_t)lvl) {
+                size_t start = i;
+                while (i < visualRunOrder.size() && shapedRun.runs[visualRunOrder[i]].bidiLevel >= (uint8_t)lvl) {
+                    i++;
+                }
+                std::reverse(visualRunOrder.begin() + start, visualRunOrder.begin() + i);
+            } else {
+                i++;
+            }
+        }
+    }
+
+    std::vector<size_t> visualClusterOrder;
+    visualClusterOrder.reserve(shapedRun.clusters.size());
+
+    for (size_t vri : visualRunOrder) {
+        const auto& runClusters = clustersByRun[vri];
+        if (runClusters.empty()) continue;
+
+        bool isRTL = shapedRun.runs[vri].isRTL;
+        if (isRTL) {
+            for (auto it = runClusters.rbegin(); it != runClusters.rend(); ++it) {
+                visualClusterOrder.push_back(*it);
+            }
+        } else {
+            for (auto it = runClusters.begin(); it != runClusters.end(); ++it) {
+                visualClusterOrder.push_back(*it);
+            }
+        }
+    }
+
+    return visualClusterOrder;
 }
 
 static std::wstring ToLower(const std::wstring& s) {
@@ -677,71 +791,85 @@ void DWriteShaper::EnsureFontMapsIndexed() {
             pFamNames->Release();
         }
 
-        UINT32 fc = pFam->GetFontCount();
-        for (UINT32 j = 0; j < fc; ++j) {
-            IDWriteFont* pF = nullptr;
-            if (FAILED(pFam->GetFont(j, &pF)) || !pF) continue;
-
-            std::wstring ps = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_POSTSCRIPT_NAME);
-            if (!ps.empty()) {
-                m_psFontMap[NormalizeFontKey(ps)].push_back({ i, j });
-                std::wstring canKey = GetCanonicalTokenKey(ps);
-                if (!canKey.empty()) {
-                    m_canonicalPsFontMap[canKey].push_back({ i, j });
-                }
-                std::wstring psFolded = FoldToAsciiKey(ps);
-                if (!psFolded.empty() && m_asciiFoldedFamilyMap.find(psFolded) == m_asciiFoldedFamilyMap.end()) {
-                    m_asciiFoldedFamilyMap[psFolded] = i;
-                    m_asciiFoldedFamilyList.push_back({ psFolded, i });
-                }
-            }
-
-            std::wstring fn = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_FULL_NAME);
-            if (!fn.empty()) {
-                m_fullNameFontMap[NormalizeFontKey(fn)].push_back({ i, j });
-                std::wstring fnFolded = FoldToAsciiKey(fn);
-                if (!fnFolded.empty() && m_asciiFoldedFamilyMap.find(fnFolded) == m_asciiFoldedFamilyMap.end()) {
-                    m_asciiFoldedFamilyMap[fnFolded] = i;
-                    m_asciiFoldedFamilyList.push_back({ fnFolded, i });
-                }
-            }
-
-            std::wstring typo = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_TYPOGRAPHIC_FAMILY_NAMES);
-            if (!typo.empty()) {
-                std::wstring typoKey = NormalizeFontKey(typo);
-                m_typoFamilyFontMap[typoKey].push_back({ i, j });
-                if (m_familyNameMap.find(typoKey) == m_familyNameMap.end()) {
-                    m_familyNameMap[typoKey] = i;
-                }
-                std::wstring typoFolded = FoldToAsciiKey(typo);
-                if (!typoFolded.empty() && m_asciiFoldedFamilyMap.find(typoFolded) == m_asciiFoldedFamilyMap.end()) {
-                    m_asciiFoldedFamilyMap[typoFolded] = i;
-                    m_asciiFoldedFamilyList.push_back({ typoFolded, i });
-                }
-            }
-
-            std::wstring wws = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_WEIGHT_STRETCH_STYLE_FAMILY_NAME);
-            if (!wws.empty()) {
-                std::wstring wwsKey = NormalizeFontKey(wws);
-                m_wwsFamilyFontMap[wwsKey].push_back({ i, j });
-                if (m_familyNameMap.find(wwsKey) == m_familyNameMap.end()) {
-                    m_familyNameMap[wwsKey] = i;
-                }
-                std::wstring wwsFolded = FoldToAsciiKey(wws);
-                if (!wwsFolded.empty() && m_asciiFoldedFamilyMap.find(wwsFolded) == m_asciiFoldedFamilyMap.end()) {
-                    m_asciiFoldedFamilyMap[wwsFolded] = i;
-                    m_asciiFoldedFamilyList.push_back({ wwsFolded, i });
-                }
-            }
-
-            pF->Release();
-        }
         pFam->Release();
     }
 }
 
+void DWriteShaper::EnsureFamilyFacesIndexed(UINT32 familyIndex) {
+    if (!m_pFontCollection) return;
+    if (m_indexedFaceFamilies.find(familyIndex) != m_indexedFaceFamilies.end()) return;
+    m_indexedFaceFamilies.insert(familyIndex);
+
+    IDWriteFontFamily* pFam = nullptr;
+    if (FAILED(m_pFontCollection->GetFontFamily(familyIndex, &pFam)) || !pFam) return;
+
+    UINT32 fc = pFam->GetFontCount();
+    for (UINT32 j = 0; j < fc; ++j) {
+        IDWriteFont* pF = nullptr;
+        if (FAILED(pFam->GetFont(j, &pF)) || !pF) continue;
+
+        std::wstring ps = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_POSTSCRIPT_NAME);
+        if (!ps.empty()) {
+            m_psFontMap[NormalizeFontKey(ps)].push_back({ familyIndex, j });
+            std::wstring canKey = GetCanonicalTokenKey(ps);
+            if (!canKey.empty()) {
+                m_canonicalPsFontMap[canKey].push_back({ familyIndex, j });
+            }
+            std::wstring psFolded = FoldToAsciiKey(ps);
+            if (!psFolded.empty() && m_asciiFoldedFamilyMap.find(psFolded) == m_asciiFoldedFamilyMap.end()) {
+                m_asciiFoldedFamilyMap[psFolded] = familyIndex;
+                m_asciiFoldedFamilyList.push_back({ psFolded, familyIndex });
+            }
+        }
+
+        std::wstring fn = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_FULL_NAME);
+        if (!fn.empty()) {
+            m_fullNameFontMap[NormalizeFontKey(fn)].push_back({ familyIndex, j });
+            std::wstring fnFolded = FoldToAsciiKey(fn);
+            if (!fnFolded.empty() && m_asciiFoldedFamilyMap.find(fnFolded) == m_asciiFoldedFamilyMap.end()) {
+                m_asciiFoldedFamilyMap[fnFolded] = familyIndex;
+                m_asciiFoldedFamilyList.push_back({ fnFolded, familyIndex });
+            }
+        }
+
+        std::wstring typo = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_TYPOGRAPHIC_FAMILY_NAMES);
+        if (!typo.empty()) {
+            std::wstring typoKey = NormalizeFontKey(typo);
+            m_typoFamilyFontMap[typoKey].push_back({ familyIndex, j });
+            if (m_familyNameMap.find(typoKey) == m_familyNameMap.end()) {
+                m_familyNameMap[typoKey] = familyIndex;
+            }
+            std::wstring typoFolded = FoldToAsciiKey(typo);
+            if (!typoFolded.empty() && m_asciiFoldedFamilyMap.find(typoFolded) == m_asciiFoldedFamilyMap.end()) {
+                m_asciiFoldedFamilyMap[typoFolded] = familyIndex;
+                m_asciiFoldedFamilyList.push_back({ typoFolded, familyIndex });
+            }
+        }
+
+        std::wstring wws = GetInfoString(pF, DWRITE_INFORMATIONAL_STRING_WEIGHT_STRETCH_STYLE_FAMILY_NAME);
+        if (!wws.empty()) {
+            std::wstring wwsKey = NormalizeFontKey(wws);
+            m_wwsFamilyFontMap[wwsKey].push_back({ familyIndex, j });
+            if (m_familyNameMap.find(wwsKey) == m_familyNameMap.end()) {
+                m_familyNameMap[wwsKey] = familyIndex;
+            }
+            std::wstring wwsFolded = FoldToAsciiKey(wws);
+            if (!wwsFolded.empty() && m_asciiFoldedFamilyMap.find(wwsFolded) == m_asciiFoldedFamilyMap.end()) {
+                m_asciiFoldedFamilyMap[wwsFolded] = familyIndex;
+                m_asciiFoldedFamilyList.push_back({ wwsFolded, familyIndex });
+            }
+        }
+
+        pF->Release();
+    }
+    pFam->Release();
+}
+
 static std::wstring StripFontPrefixesAndSuffixes(const std::wstring& rawName) {
     std::wstring s = TrimWString(rawName);
+    while (!s.empty() && (s.front() == L'!' || s.front() == L' ' || s.front() == L'\t')) {
+        s.erase(s.begin());
+    }
     const wchar_t* prefixes[] = {
         L"ArbFONTS-", L"ArbFONTS_", L"ArbFONTS ", L"alfont_com_", L"alfont_com-"
     };
@@ -782,6 +910,73 @@ static std::wstring StripFontPrefixesAndSuffixes(const std::wstring& rawName) {
         }
     }
     return s;
+}
+
+void DWriteShaper::IndexFamiliesForFont(const std::wstring& fontName, const std::wstring& postscriptName) {
+    if (!m_pFontCollection) return;
+
+    auto indexByName = [&](const std::wstring& name) {
+        if (name.empty()) return;
+        UINT32 familyIndex = 0;
+        BOOL exists = FALSE;
+        if (SUCCEEDED(m_pFontCollection->FindFamilyName(name.c_str(), &familyIndex, &exists)) && exists) {
+            EnsureFamilyFacesIndexed(familyIndex);
+            return;
+        }
+        auto it = m_familyNameMap.find(NormalizeFontKey(name));
+        if (it != m_familyNameMap.end()) {
+            EnsureFamilyFacesIndexed(it->second);
+            return;
+        }
+        std::wstring folded = FoldToAsciiKey(name);
+        if (!folded.empty()) {
+            auto fit = m_asciiFoldedFamilyMap.find(folded);
+            if (fit != m_asciiFoldedFamilyMap.end()) {
+                EnsureFamilyFacesIndexed(fit->second);
+                return;
+            }
+            for (const auto& entry : m_asciiFoldedFamilyList) {
+                if (entry.first == folded) {
+                    EnsureFamilyFacesIndexed(entry.second);
+                    return;
+                }
+            }
+
+            bool indexedPrefix = false;
+            for (const auto& entry : m_asciiFoldedFamilyList) {
+                if (entry.first.size() > folded.size() &&
+                    entry.first.compare(0, folded.size(), folded) == 0) {
+                    EnsureFamilyFacesIndexed(entry.second);
+                    indexedPrefix = true;
+                }
+            }
+            if (indexedPrefix) return;
+        }
+    };
+
+    auto indexProgressively = [&](std::wstring name) {
+        name = TrimWString(name);
+        while (!name.empty()) {
+            indexByName(name);
+            indexByName(name + L" Variable");
+            size_t split = name.find_last_of(L" -_");
+            if (split == std::wstring::npos) break;
+            name = TrimWString(name.substr(0, split));
+        }
+    };
+
+    indexProgressively(fontName);
+    indexProgressively(StripFontPrefixesAndSuffixes(fontName));
+    indexByName(fontName);
+
+    if (!postscriptName.empty()) {
+        std::wstring psPrefix = postscriptName;
+        size_t split = psPrefix.find_first_of(L"-_");
+        if (split != std::wstring::npos) {
+            psPrefix = psPrefix.substr(0, split);
+        }
+        indexProgressively(psPrefix);
+    }
 }
 
 static bool FamilyHasMatchingStretch(IDWriteFontFamily* pFamily, DWRITE_FONT_STRETCH targetStretch) {
@@ -1017,6 +1212,7 @@ bool DWriteShaper::ShapeTextDetailed(
     outRun = {};
     if (!Initialize() || text.empty()) return false;
     EnsureFontMapsIndexed();
+    IndexFamiliesForFont(fontName, postscriptName);
 
     std::wstring cacheKey = postscriptName.empty() ? fontName : (fontName + L"|" + postscriptName);
     if (sampleGid > 0) {
@@ -1498,11 +1694,16 @@ bool DWriteShaper::ShapeTextDetailed(
     }
 
     TextAnalysisSource source(normalizedText);
+    outRun.paragraphRTL = source.IsRTL();
     TextAnalysisSink sink;
     m_pAnalyzer->AnalyzeScript(&source, 0, (UINT32)normalizedText.size(), &sink);
     m_pAnalyzer->AnalyzeBidi(&source, 0, (UINT32)normalizedText.size(), &sink);
 
-    auto unifiedRuns = BuildUnifiedRuns((UINT32)normalizedText.size(), sink.scriptRuns, sink.bidiRuns);
+    auto unifiedRuns = BuildUnifiedRuns(
+        (UINT32)normalizedText.size(),
+        sink.scriptRuns,
+        sink.bidiRuns,
+        source.IsRTL() ? (UINT8)1 : (UINT8)0);
     if (unifiedRuns.empty()) {
         pFontFace->Release();
         return false;
@@ -1523,7 +1724,10 @@ bool DWriteShaper::ShapeTextDetailed(
     size_t nonZeroArabicCount = 0;
     size_t missingGlyphCount = 0;
 
-    for (const auto& run : unifiedRuns) {
+    outRun.runs.reserve(unifiedRuns.size());
+    for (size_t runIdx = 0; runIdx < unifiedRuns.size(); ++runIdx) {
+        const auto& run = unifiedRuns[runIdx];
+        outRun.runs.push_back({ run.textPosition, run.textLength, run.bidiLevel, run.isRTL });
         const UINT32 runLen = run.textLength;
         const UINT32 maxGlyphs = runLen * 3 + 16;
         const wchar_t* runText = normalizedText.c_str() + run.textPosition;
@@ -1609,7 +1813,6 @@ bool DWriteShaper::ShapeTextDetailed(
             continue;
         }
 
-        // Prefix mark adjustment
         std::vector<bool> isSyntheticPrefixMark(runActualGlyphCount, false);
         if (run.scriptAnalysis.script == 3 || run.isRTL) {
             for (size_t c = 0; c < runLen; ++c) {
@@ -1821,7 +2024,10 @@ bool DWriteShaper::ShapeTextDetailed(
                         (uint16_t)(run.textPosition + c),
                         (uint16_t)(charEnd - c),
                         mappedStart,
-                        (uint16_t)(mappedEnd - mappedStart)
+                        (uint16_t)(mappedEnd - mappedStart),
+                        run.isRTL,
+                        run.bidiLevel,
+                        (uint16_t)runIdx
                     });
                 }
             }
@@ -1999,20 +2205,6 @@ bool DWriteShaper::ShapeText(
     return true;
 }
 
-bool DWriteShaper::ShapeTextWithFallback(
-    const std::wstring& text,
-    const std::wstring& fontName,
-    float fontSize,
-    std::vector<ShapedGlyphResult>& outGlyphs,
-    const std::wstring& postscriptName,
-    uint32_t sampleChar,
-    uint16_t sampleGid,
-    const std::vector<DWRITE_FONT_AXIS_VALUE>& axisValues,
-    const std::vector<DWRITE_FONT_FEATURE>& fontFeatures
-) {
-    return ShapeText(text, fontName, fontSize, outGlyphs, postscriptName, sampleChar, sampleGid, axisValues, fontFeatures);
-}
-
 bool DWriteShaper::ShapeTextWithFallbackDetailed(
     const std::wstring& text,
     const std::wstring& fontName,
@@ -2024,7 +2216,76 @@ bool DWriteShaper::ShapeTextWithFallbackDetailed(
     const std::vector<DWRITE_FONT_AXIS_VALUE>& axisValues,
     const std::vector<DWRITE_FONT_FEATURE>& fontFeatures
 ) {
-    return ShapeTextDetailed(text, fontName, fontSize, outRun, postscriptName, sampleChar, sampleGid, axisValues, fontFeatures);
+    std::wstring cleanFontName = fontName;
+    while (!cleanFontName.empty() && (cleanFontName.front() == L'!' || cleanFontName.front() == L' ' || cleanFontName.front() == L'\t')) {
+        cleanFontName.erase(cleanFontName.begin());
+    }
+
+    if (ShapeTextDetailed(text, cleanFontName, fontSize, outRun, postscriptName, sampleChar, sampleGid, axisValues, fontFeatures)) {
+        return true;
+    }
+
+    auto hasKw = [](const std::wstring& s, const wchar_t* kw) {
+        std::wstring low = s;
+        for (wchar_t& c : low) c = (wchar_t)towlower(c);
+        std::wstring kwLow = kw;
+        for (wchar_t& c : kwLow) c = (wchar_t)towlower(c);
+        return low.find(kwLow) != std::wstring::npos;
+    };
+
+    bool isBold = hasKw(cleanFontName, L"bold") || hasKw(cleanFontName, L"black") ||
+                  hasKw(postscriptName, L"bold") || hasKw(postscriptName, L"black");
+    bool isItalic = hasKw(cleanFontName, L"italic") || hasKw(cleanFontName, L"oblique") || hasKw(cleanFontName, L"slanted") ||
+                    hasKw(postscriptName, L"italic") || hasKw(postscriptName, L"oblique") || hasKw(postscriptName, L"slanted");
+
+    std::vector<std::wstring> fallbackCandidates;
+    if (isBold && isItalic) {
+        fallbackCandidates = {
+            L"Arial Bold Italic", L"Segoe UI Bold Italic", L"Segoe UI Italic",
+            L"Arial Italic", L"Arial Bold", L"Segoe UI Bold", L"Arial", L"Segoe UI", L"Tahoma"
+        };
+    } else if (isBold) {
+        fallbackCandidates = {
+            L"Arial Bold", L"Segoe UI Bold", L"Tahoma Bold",
+            L"Arial", L"Segoe UI", L"Tahoma", L"Calibri", L"Times New Roman"
+        };
+    } else if (isItalic) {
+        fallbackCandidates = {
+            L"Arial Italic", L"Segoe UI Italic",
+            L"Arial", L"Segoe UI", L"Tahoma", L"Calibri", L"Times New Roman"
+        };
+    } else {
+        fallbackCandidates = {
+            L"Arial", L"Segoe UI", L"Tahoma", L"Calibri", L"Times New Roman"
+        };
+    }
+
+    for (const auto& cand : fallbackCandidates) {
+        if (ShapeTextDetailed(text, cand, fontSize, outRun, L"", 0, 0, axisValues, fontFeatures)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DWriteShaper::ShapeTextWithFallback(
+    const std::wstring& text,
+    const std::wstring& fontName,
+    float fontSize,
+    std::vector<ShapedGlyphResult>& outGlyphs,
+    const std::wstring& postscriptName,
+    uint32_t sampleChar,
+    uint16_t sampleGid,
+    const std::vector<DWRITE_FONT_AXIS_VALUE>& axisValues,
+    const std::vector<DWRITE_FONT_FEATURE>& fontFeatures
+) {
+    ShapedTextRun run;
+    if (!ShapeTextWithFallbackDetailed(text, fontName, fontSize, run, postscriptName, sampleChar, sampleGid, axisValues, fontFeatures)) {
+        outGlyphs.clear();
+        return false;
+    }
+    outGlyphs = std::move(run.glyphsByChar);
+    return true;
 }
 
 }
