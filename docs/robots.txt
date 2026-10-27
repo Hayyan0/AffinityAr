@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hayyan0.github.io/AffinityAr/sitemap.xml
